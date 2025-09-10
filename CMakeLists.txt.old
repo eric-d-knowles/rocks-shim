@@ -1,0 +1,57 @@
+cmake_minimum_required(VERSION 3.20)
+project(rocks_shim LANGUAGES CXX)
+
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# Find dependencies
+set(PYBIND11_FINDPYTHON ON)
+find_package(pybind11 CONFIG REQUIRED)
+
+# Build RocksDB
+include(cmake/BuildRocksDB.cmake)
+
+# Create extension
+pybind11_add_module(rocks_shim MODULE src/cpp/module.cpp src/cpp/db.cc)
+target_compile_features(rocks_shim PRIVATE cxx_std_17)
+target_include_directories(rocks_shim PRIVATE
+  include
+  ${THIRD_PARTY_DIR}/rocksdb-install/include
+)
+target_link_libraries(rocks_shim PRIVATE rocksdb_external)
+
+# Configure for portable wheel
+set_target_properties(rocks_shim PROPERTIES
+  BUILD_WITH_INSTALL_RPATH ON
+  INSTALL_RPATH "$ORIGIN/.libs"
+)
+
+# Stage RocksDB libraries
+add_custom_target(stage_libs
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/.libs
+  COMMAND ${CMAKE_COMMAND}
+    -DSOURCE_DIR=${THIRD_PARTY_DIR}/rocksdb-install/lib
+    -DDEST_DIR=${CMAKE_CURRENT_BINARY_DIR}/.libs
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyRocksDBLibs.cmake
+  DEPENDS rocksdb_ep
+)
+add_dependencies(rocks_shim stage_libs)
+
+# Install everything
+install(TARGETS rocks_shim LIBRARY DESTINATION ".")
+install(FILES __init__.py DESTINATION ".")
+install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/.libs/ DESTINATION ".libs"
+  FILES_MATCHING PATTERN "librocksdb.so*")
+
+install(CODE "
+  message(STATUS \"CMAKE_INSTALL_PREFIX is: \${CMAKE_INSTALL_PREFIX}\")
+  message(STATUS \"Looking for files in install directory:\")
+  execute_process(COMMAND ls -la \${CMAKE_INSTALL_PREFIX})
+  set(EXTENSION_PATH \${CMAKE_INSTALL_PREFIX}/rocks_shim.cpython-311-x86_64-linux-gnu.so)
+  message(STATUS \"Trying to patch: \${EXTENSION_PATH}\")
+  if(EXISTS \${EXTENSION_PATH})
+    message(STATUS \"File exists, running patchelf\")
+    execute_process(COMMAND ${PATCHELF_EXECUTABLE} --set-rpath '\$ORIGIN/.libs' \${EXTENSION_PATH})
+  else()
+    message(STATUS \"File does not exist at expected path\")
+  endif()
+")
