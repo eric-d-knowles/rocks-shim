@@ -39,9 +39,17 @@ struct ItImpl : public Iterator {
   void Seek(const std::string& lower) override { it->Seek(lower); }
   bool Valid() const override { return it->Valid(); }
 
-  rocksdb::Slice Key() const override { return it->key(); }
-  rocksdb::Slice Value() const override { return it->value(); }
+  // Return string_view to perfectly match the header
+  std::string_view Key() const override {
+    auto k = it->key();
+    return {k.data(), k.size()};
   }
+  std::string_view Value() const override {
+    auto v = it->value();
+    return {v.data(), v.size()};
+  }
+
+  void Next() override { it->Next(); }
 };
 
 // ---------------- WriteBatch ----------------
@@ -305,7 +313,6 @@ struct DbImpl : public DB {
   void Close() override {
     if (!db) return;
     rocksdb::CancelAllBackgroundWork(db.get(), /*wait=*/false);
-    db->Close(); // no-op; documents intent
     db.reset();
   }
 
