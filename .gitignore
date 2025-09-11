@@ -6,3 +6,5 @@ __pycache__/
 *.so
 .cache/
 .cmake/
+wheelhouse/
+wheelhouse_temp/

@@ -11,6 +11,11 @@ set(THIRD_PARTY_DIR ${CMAKE_BINARY_DIR}/third_party_${VENDOR_CACHE_TAG})
 set(CODECS_INSTALL_PREFIX ${THIRD_PARTY_DIR}/codec-install)
 set(ROCKSDB_INSTALL_PREFIX ${THIRD_PARTY_DIR}/rocksdb-install)
 
+# Define the library directory name. manylinux2014 (and other 64-bit Linux distros)
+# often use 'lib64', so we explicitly set it here to avoid ambiguity.
+set(ROCKSDB_LIB_DIR_NAME "lib64")
+set(ROCKSDB_LIB_DIR ${ROCKSDB_INSTALL_PREFIX}/${ROCKSDB_LIB_DIR_NAME})
+
 # CMake 3.24+ timestamp handling
 if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.24")
   set(_DOWNLOAD_EXTRACT_TIMESTAMP DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
@@ -27,7 +32,7 @@ ExternalProject_Add(snappy_ep
   BINARY_DIR ${THIRD_PARTY_DIR}/snappy-build
   CMAKE_ARGS
     -DCMAKE_INSTALL_PREFIX=${CODECS_INSTALL_PREFIX}
-    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+    -DCMAKE_BUILD_type=${CMAKE_BUILD_TYPE}
     -DBUILD_SHARED_LIBS=OFF
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     -DSNAPPY_BUILD_TESTS=OFF
@@ -43,11 +48,11 @@ ExternalProject_Add(snappy_ep
 ExternalProject_Add(zstd_ep
   URL "https://github.com/facebook/zstd/archive/refs/tags/v${ZSTD_VERSION}.tar.gz"
   SOURCE_DIR ${THIRD_PARTY_DIR}/zstd-src
-  SOURCE_SUBDIR build/cmake
   BINARY_DIR ${THIRD_PARTY_DIR}/zstd-build
+  SOURCE_SUBDIR build/cmake
   CMAKE_ARGS
     -DCMAKE_INSTALL_PREFIX=${CODECS_INSTALL_PREFIX}
-    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+    -DCMAKE_BUILD_type=${CMAKE_BUILD_TYPE}
     -DBUILD_SHARED_LIBS=OFF
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     -DZSTD_BUILD_PROGRAMS=OFF
@@ -63,11 +68,11 @@ ExternalProject_Add(zstd_ep
 ExternalProject_Add(lz4_ep
   URL "https://github.com/lz4/lz4/archive/refs/tags/v${LZ4_VERSION}.tar.gz"
   SOURCE_DIR ${THIRD_PARTY_DIR}/lz4-src
-  SOURCE_SUBDIR build/cmake
   BINARY_DIR ${THIRD_PARTY_DIR}/lz4-build
+  SOURCE_SUBDIR build/cmake
   CMAKE_ARGS
     -DCMAKE_INSTALL_PREFIX=${CODECS_INSTALL_PREFIX}
-    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+    -DCMAKE_BUILD_type=${CMAKE_BUILD_TYPE}
     -DBUILD_SHARED_LIBS=OFF
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     -DLZ4_BUILD_CLI=OFF
@@ -85,7 +90,7 @@ ExternalProject_Add(rocksdb_ep
   BINARY_DIR ${THIRD_PARTY_DIR}/rocksdb-build
   CMAKE_ARGS
     -DCMAKE_INSTALL_PREFIX=${ROCKSDB_INSTALL_PREFIX}
-    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+    -DCMAKE_BUILD_type=${CMAKE_BUILD_TYPE}
     -DCMAKE_PREFIX_PATH=${CODECS_INSTALL_PREFIX}
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     -DBUILD_SHARED_LIBS=ON
@@ -97,32 +102,28 @@ ExternalProject_Add(rocksdb_ep
     -DWITH_ZLIB=OFF -DWITH_BZ2=OFF
     -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DWITH_GFLAGS=OFF
     -DFAIL_ON_WARNINGS=OFF
-    # --- RPATH FIX ---
-    # Directly instruct the linker to set a portable RPATH. This is our
-    # "best effort" to create a clean library before auditwheel finishes the job.
-    -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-rpath,'\\\$ORIGIN'"
+    "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-rpath,'\\\$ORIGIN'"
     ${_WARNING_FLAGS}
-  # The 'install' target is run as part of the build step, populating ROCKSDB_INSTALL_PREFIX
   BUILD_COMMAND ${_ISOLATED_ENV} ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
-  # After building, copy the libraries to the final staging directory for the wheel
-  INSTALL_COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${ROCKSDB_INSTALL_PREFIX}/lib
-    ${CMAKE_BINARY_DIR}/.libs
+  # Use the correct lib dir for copying
+  INSTALL_COMMAND ${CMAKE_COMMAND} -E copy_directory ${ROCKSDB_LIB_DIR} ${CMAKE_BINARY_DIR}/.libs
   DEPENDS snappy_ep zstd_ep lz4_ep
   UPDATE_COMMAND ""
   ${_DOWNLOAD_EXTRACT_TIMESTAMP}
+  # Use the correct lib dir for byproducts
   BUILD_BYPRODUCTS
-    ${ROCKSDB_INSTALL_PREFIX}/lib/librocksdb.so
-    ${ROCKSDB_INSTALL_PREFIX}/lib/librocksdb.so.10
-    ${ROCKSDB_INSTALL_PREFIX}/lib/librocksdb.so.10.5.1
+    ${ROCKSDB_LIB_DIR}/librocksdb.so
+    ${ROCKSDB_LIB_DIR}/librocksdb.so.10
+    ${ROCKSDB_LIB_DIR}/librocksdb.so.10.5.1
 )
 
 # Create imported target
 add_library(rocksdb_external SHARED IMPORTED GLOBAL)
 add_dependencies(rocksdb_external rocksdb_ep)
+
+# Use the correct lib dir for the imported location
 set_target_properties(rocksdb_external PROPERTIES
-  IMPORTED_LOCATION ${ROCKSDB_INSTALL_PREFIX}/lib/librocksdb.so
+  IMPORTED_LOCATION ${ROCKSDB_LIB_DIR}/librocksdb.so
 )
 
 message(STATUS "RocksDB ${ROCKSDB_VERSION} will be built and bundled (skipping hash checks)")
-
