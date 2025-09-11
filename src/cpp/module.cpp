@@ -1,79 +1,109 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <rocks_shim/rocks_shim.hpp>
-#include <rocksdb/env.h>
 
 namespace py = pybind11;
-namespace rs = ::rshim;  // adjust if your namespace differs
-
-static inline py::bytes to_bytes(const std::string& s) { return py::bytes(s.data(), s.size()); }
+namespace rs = ::rshim;
 
 PYBIND11_MODULE(rocks_shim, m) {
-  m.doc() = "Minimal RocksDB shim (FetchContent, static codecs)";
+  m.doc() = "High-performance RocksDB shim for Python";
 
+  // --- Iterator Bindings ---
+  // Note: key() and value() now handle std::string_view for zero-copy views.
+  // GIL is released for I/O-bound operations (seek, next).
   py::class_<rs::Iterator, std::shared_ptr<rs::Iterator>>(m, "Iterator")
-    .def("seek",  [](rs::Iterator& it, py::bytes lower){ it.Seek(std::string(lower)); })
+    .def("seek", &rs::Iterator::Seek, py::arg("lower"), py::call_guard<py::gil_scoped_release>())
     .def("valid", &rs::Iterator::Valid)
-    .def("key",   [](rs::Iterator& it){ return to_bytes(it.Key()); })
-    .def("value", [](rs::Iterator& it){ return to_bytes(it.Value()); })
-    .def("next",  &rs::Iterator::Next);
+    .def("key", [](const rs::Iterator& self) {
+        auto key_sv = self.Key();
+        return py::bytes(key_sv.data(), key_sv.size());
+     })
+    .def("value", [](const rs::Iterator& self) {
+        auto val_sv = self.Value();
+        return py::bytes(val_sv.data(), val_sv.size());
+     })
+    .def("next", &rs::Iterator::Next, py::call_guard<py::gil_scoped_release>());
 
+  // --- WriteBatch Bindings ---
+  // GIL is released only on Commit(), as other operations are in-memory.
   py::class_<rs::WriteBatch, std::shared_ptr<rs::WriteBatch>>(m, "WriteBatch")
     .def("__enter__", [](std::shared_ptr<rs::WriteBatch> self){ return self; })
-    .def("__exit__",  [](rs::WriteBatch& self, py::object et, py::object, py::object){
-        if (et.is_none()) {
-          py::gil_scoped_release _g;
+    .def("__exit__",  [](rs::WriteBatch& self, py::object exc_type, py::object, py::object){
+        if (exc_type.is_none()) {
+          py::gil_scoped_release release;
           self.Commit();
         } else {
           self.Discard();
         }
-        return false;
+        return false; // Do not suppress exceptions
     })
-    .def("put",    [](rs::WriteBatch& wb, py::bytes k, py::bytes v){ wb.Put(std::string(k), std::string(v)); })
-    .def("delete", [](rs::WriteBatch& wb, py::bytes k){ wb.Delete(std::string(k)); })
-    .def("merge",  [](rs::WriteBatch& wb, py::bytes k, py::bytes v){ wb.Merge(std::string(k), std::string(v)); });
+    .def("put",    [](rs::WriteBatch& self, py::bytes k, py::bytes v){ self.Put(std::string(k), std::string(v)); })
+    .def("delete", [](rs::WriteBatch& self, py::bytes k){ self.Delete(std::string(k)); })
+    .def("merge",  [](rs::WriteBatch& self, py::bytes k, py::bytes v){ self.Merge(std::string(k), std::string(v)); });
 
+  // --- DB Bindings ---
   py::class_<rs::DB, std::shared_ptr<rs::DB>>(m, "DB")
     .def_static("open",
-      [](const std::string& path, bool read_only, bool create_if_missing){
-        rs::OpenArgs a; a.path = path; a.read_only = read_only; a.create_if_missing = create_if_missing;
-        a.profile = read_only ? "read" : "write";
+      [](const std::string& path, bool read_only, bool create_if_missing, const std::string& profile){
+        rs::OpenArgs a;
+        a.path = path;
+        a.read_only = read_only;
+        a.create_if_missing = create_if_missing;
+        a.profile = profile.empty() ? (read_only ? "read" : "write") : profile;
+
+        py::gil_scoped_release release;
         return rs::DB::Open(a);
       },
-      py::arg("path"), py::kw_only(), py::arg("read_only")=false, py::arg("create_if_missing")=false)
+      py::arg("path"), py::kw_only(), py::arg("read_only")=false, py::arg("create_if_missing")=false, py::arg("profile") = "")
     .def("__enter__", [](std::shared_ptr<rs::DB> self){ return self; })
     .def("__exit__",  [](rs::DB& self, py::object, py::object, py::object){ self.Close(); return false; })
-    .def("close", &rs::DB::Close)
-    .def("get",   [](rs::DB& db, py::bytes k)->py::object{
-        py::gil_scoped_release _g;
+    .def("close", &rs::DB::Close, py::call_guard<py::gil_scoped_release>())
+
+    // Pythonic __getitem__ that raises KeyError on miss
+    .def("__getitem__", [](rs::DB& self, py::bytes k) {
+        py::gil_scoped_release release;
         std::string out;
-        if (!db.Get(std::string(k), &out)) return py::none();
-        return to_bytes(out);
+        if (self.Get(std::string(k), &out)) {
+            return py::bytes(out);
+        }
+        throw py::key_error("Key not found");
+    })
+    // .get() method that returns None on miss
+    .def("get", [](rs::DB& self, py::bytes k) -> py::object {
+        py::gil_scoped_release release;
+        std::string out;
+        if (self.Get(std::string(k), &out)) {
+            return py::bytes(out);
+        }
+        return py::none();
       })
-    .def("put",    [](rs::DB& db, py::bytes k, py::bytes v){ py::gil_scoped_release _g; db.Put(std::string(k), std::string(v)); })
-    .def("delete", [](rs::DB& db, py::bytes k){ py::gil_scoped_release _g; db.Delete(std::string(k)); })
-    .def("merge",  [](rs::DB& db, py::bytes k, py::bytes v){ py::gil_scoped_release _g; db.Merge(std::string(k), std::string(v)); })
-    .def("iterator",     &rs::DB::NewIterator,   py::keep_alive<0,1>())
-    // NEW: per-batch WAL/sync controls
-    .def("write_batch",
-         &rs::DB::NewWriteBatch,
+    .def("put",    [](rs::DB& self, py::bytes k, py::bytes v){ py::gil_scoped_release r; self.Put(std::string(k), std::string(v)); })
+    .def("delete", [](rs::DB& self, py::bytes k){ py::gil_scoped_release r; self.Delete(std::string(k)); })
+    .def("merge",  [](rs::DB& self, py::bytes k, py::bytes v){ py::gil_scoped_release r; self.Merge(std::string(k), std::string(v)); })
+    .def("iterator", &rs::DB::NewIterator, py::keep_alive<0,1>())
+    .def("write_batch", &rs::DB::NewWriteBatch,
          py::kw_only(), py::arg("disable_wal") = false, py::arg("sync") = false,
          py::keep_alive<0,1>())
-    .def("finalize_bulk",&rs::DB::FinalizeBulk,  py::call_guard<py::gil_scoped_release>())
-    .def("compact_all",  &rs::DB::CompactAll,    py::call_guard<py::gil_scoped_release>())
-    .def("set_profile",  &rs::DB::SetProfile)
-    .def("get_property", &rs::DB::GetProperty)
+    .def("finalize_bulk", &rs::DB::FinalizeBulk, py::call_guard<py::gil_scoped_release>())
+    .def("compact_all", &rs::DB::CompactAll, py::call_guard<py::gil_scoped_release>())
+    .def("set_profile", &rs::DB::SetProfile, py::arg("profile"))
+    .def("get_property", &rs::DB::GetProperty, py::arg("name"))
     .def("ingest", &rs::DB::IngestExternalFiles,
          py::arg("paths"), py::kw_only(), py::arg("move")=true, py::arg("write_global_seqno")=false,
          py::call_guard<py::gil_scoped_release>());
 
-  // module-level convenience
+  // --- Module-level convenience open() function ---
   m.def("open",
     [](const std::string& path, std::string mode, std::string profile, bool create_if_missing){
-      rs::OpenArgs a; a.path = path; a.read_only = (mode == "ro");
+      rs::OpenArgs a;
+      a.path = path;
+      a.read_only = (mode == "ro");
       a.create_if_missing = create_if_missing && !a.read_only;
-      a.profile = profile.empty() ? (a.read_only ? "read" : "write") : profile;
+      a.profile = profile;
+
+      py::gil_scoped_release release;
       return rs::DB::Open(a);
     },
-    py::arg("path"), py::kw_only(), py::arg("mode")="rw", py::arg("profile")="write", py::arg("create_if_missing")=true);
+    py::arg("path"), py::kw_only(), py::arg("mode")="rw", py::arg("profile")="write", py::arg("create_if_missing")=true,
+    "Convenience function to open a database with specified mode and profile.");
 }

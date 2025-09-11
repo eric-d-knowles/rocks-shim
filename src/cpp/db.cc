@@ -33,24 +33,15 @@ static inline std::string base_profile(const std::string& prof) {
 // ---------------- Iterator ----------------
 struct ItImpl : public Iterator {
   std::unique_ptr<rocksdb::Iterator> it;
-  mutable std::string k, v;
 
   explicit ItImpl(std::unique_ptr<rocksdb::Iterator> x) : it(std::move(x)) {}
 
   void Seek(const std::string& lower) override { it->Seek(lower); }
   bool Valid() const override { return it->Valid(); }
 
-  const std::string& Key() const override {
-    auto s = it->key();
-    k.assign(s.data(), s.size());
-    return k;
+  rocksdb::Slice Key() const override { return it->key(); }
+  rocksdb::Slice Value() const override { return it->value(); }
   }
-  const std::string& Value() const override {
-    auto s = it->value();
-    v.assign(s.data(), s.size());
-    return v;
-  }
-  void Next() override { it->Next(); }
 };
 
 // ---------------- WriteBatch ----------------

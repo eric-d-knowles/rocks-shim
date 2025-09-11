@@ -1,8 +1,9 @@
 #pragma once
-#include <memory>
-#include <string>
-#include <vector>
-#include <optional>
+#include <memory>       // For std::shared_ptr
+#include <string>       // For std::string
+#include <string_view>  // For std::string_view
+#include <vector>       // For std::vector
+#include <optional>     // For std::optional
 
 namespace rshim {
 
@@ -10,8 +11,6 @@ struct OpenArgs {
   std::string path;
   bool        read_only         = false;
   bool        create_if_missing = false;
-  // profile selects base + optional merge-op suffix, e.g.:
-  // "read", "write", "bulk", "bulk_write", and variants like "write:packed24"
   std::string profile = "write";
 };
 
@@ -20,8 +19,8 @@ public:
   virtual ~Iterator() = default;
   virtual void Seek(const std::string& lower) = 0;
   virtual bool Valid() const = 0;
-  virtual const std::string& Key() const = 0;   // stable until Next/Seek
-  virtual const std::string& Value() const = 0; // stable until Next/Seek
+  virtual std::string_view Key() const = 0;
+  virtual std::string_view Value() const = 0;
   virtual void Next() = 0;
 };
 
@@ -32,7 +31,7 @@ public:
   virtual void Delete(const std::string& k) = 0;
   virtual void Merge(const std::string& k, const std::string& v) = 0;
   virtual void Commit() = 0;
-  virtual void Discard() {}  // optional
+  virtual void Discard() {}
 };
 
 class DB {
@@ -49,7 +48,7 @@ public:
 
   virtual std::shared_ptr<Iterator>   NewIterator() = 0;
 
-  // Allow callers to control WAL/sync per batch (matches db.cc + pybind)
+  // Allow callers to control WAL/sync per batch
   virtual std::shared_ptr<WriteBatch> NewWriteBatch(bool disable_wal = false, bool sync = false) = 0;
 
   virtual void FinalizeBulk() {}
