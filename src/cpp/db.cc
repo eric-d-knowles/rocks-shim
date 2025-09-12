@@ -83,11 +83,15 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
   // Core toggles (profile-agnostic)
   o.create_if_missing = a.read_only ? false : a.create_if_missing;
   o.level_compaction_dynamic_level_bytes = true;
-  o.enable_pipelined_write = true;
 
   // Get base profile and suffix
   const std::string base = base_profile(a.profile);
   const std::string msuf = merge_suffix(a.profile);
+
+  // Validate base profile first
+  if (base != "read" && base != "write") {
+    throw std::invalid_argument("Unknown profile: '" + a.profile + "'. Valid profiles: read, write");
+  }
 
   // Merge operator by profile suffix
   if (msuf == "packed24") {
@@ -176,7 +180,6 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
     // -------- Housekeeping / observability
     o.stats_dump_period_sec = 60;
     o.skip_stats_update_on_db_open = true;
-
   } else if (base == "write") {
     // -------- I/O (bulk ingest posture)
     o.allow_mmap_reads = false;
@@ -195,7 +198,7 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
 
     // -------- Concurrency
     o.use_adaptive_mutex = true;
-    o.enable_pipelined_write = true;
+    o.enable_pipelined_write = false;
     o.enable_write_thread_adaptive_yield = true;
     o.two_write_queues = true;
     o.unordered_write = true;                         // flip to false if you need global order
