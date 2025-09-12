@@ -4,7 +4,6 @@ include(ExternalProject)
 # Configuration
 set(ROCKSDB_VERSION "10.5.1")
 set(SNAPPY_VERSION "1.1.10")
-set(ZSTD_VERSION "1.5.6")
 set(LZ4_VERSION "1.9.4")
 set(VENDOR_CACHE_TAG 7)
 set(THIRD_PARTY_DIR ${CMAKE_BINARY_DIR}/third_party_${VENDOR_CACHE_TAG})
@@ -37,26 +36,6 @@ ExternalProject_Add(snappy_ep
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     -DSNAPPY_BUILD_TESTS=OFF
     -DSNAPPY_BUILD_BENCHMARKS=OFF
-    -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-    ${_WARNING_FLAGS}
-  BUILD_COMMAND ${_ISOLATED_ENV} ${CMAKE_COMMAND} --build <BINARY_DIR>
-  UPDATE_COMMAND ""
-  ${_DOWNLOAD_EXTRACT_TIMESTAMP}
-)
-
-# Build ZSTD (static)
-ExternalProject_Add(zstd_ep
-  URL "https://github.com/facebook/zstd/archive/refs/tags/v${ZSTD_VERSION}.tar.gz"
-  SOURCE_DIR ${THIRD_PARTY_DIR}/zstd-src
-  BINARY_DIR ${THIRD_PARTY_DIR}/zstd-build
-  SOURCE_SUBDIR build/cmake
-  CMAKE_ARGS
-    -DCMAKE_INSTALL_PREFIX=${CODECS_INSTALL_PREFIX}
-    -DCMAKE_BUILD_type=${CMAKE_BUILD_TYPE}
-    -DBUILD_SHARED_LIBS=OFF
-    -DCMAKE_POSITION_INDEPENDENT_CODE=ON
-    -DZSTD_BUILD_PROGRAMS=OFF
-    -DZSTD_BUILD_TESTS=OFF
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     ${_WARNING_FLAGS}
   BUILD_COMMAND ${_ISOLATED_ENV} ${CMAKE_COMMAND} --build <BINARY_DIR>
@@ -97,9 +76,8 @@ ExternalProject_Add(rocksdb_ep
     -DPORTABLE=ON
     -DUSE_RTTI=ON
     -DWITH_SNAPPY=ON
-    -DWITH_ZSTD=ON
     -DWITH_LZ4=ON
-    -DWITH_ZLIB=OFF -DWITH_BZ2=OFF
+    -DWITH_ZSTD=OFF
     -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DWITH_GFLAGS=OFF
     -DFAIL_ON_WARNINGS=OFF
     "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-rpath,'\\\$ORIGIN'"
@@ -107,7 +85,7 @@ ExternalProject_Add(rocksdb_ep
   BUILD_COMMAND ${_ISOLATED_ENV} ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
   # Use the correct lib dir for copying
   INSTALL_COMMAND ${CMAKE_COMMAND} -E copy_directory ${ROCKSDB_LIB_DIR} ${CMAKE_BINARY_DIR}/.libs
-  DEPENDS snappy_ep zstd_ep lz4_ep
+  DEPENDS snappy_ep lz4_ep
   UPDATE_COMMAND ""
   ${_DOWNLOAD_EXTRACT_TIMESTAMP}
   # Use the correct lib dir for byproducts
