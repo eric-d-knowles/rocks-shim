@@ -95,7 +95,7 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
 
   // Merge operator by profile suffix
   if (msuf == "packed24") {
-    o.merge_operator.reset(new rshim:Packed24Merge());
+    o.merge_operator.reset(new rshim::Packed24Merge());
   }
 
   // Configuration by profile base
