@@ -6,9 +6,7 @@
   <component name="ChangeListManager">
     <list default="true" id="0d085f40-f0a0-4d17-833e-3d6dd53328d7" name="Changes" comment="Code update">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/rocks_shim/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/cpp/db.cc" beforeDir="false" afterPath="$PROJECT_DIR$/src/cpp/db.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -62,8 +60,8 @@
       <window_info id="Backup and Sync History" />
       <window_info id="Commit_Guest" show_stripe_button="false" />
       <window_info id="Pull Requests" />
-      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.23867187" />
-      <window_info id="Commit" order="1" weight="0.23867187" />
+      <window_info content_ui="combo" id="Project" order="0" weight="0.23867187" />
+      <window_info active="true" id="Commit" order="1" visible="true" weight="0.23867187" />
       <window_info id="Structure" order="2" side_tool="true" weight="0.25" />
       <window_info id="Learn" order="3" weight="0.20664063" />
       <window_info anchor="bottom" id="Database Changes" />
@@ -144,7 +142,8 @@
       <workItem from="1757654401807" duration="222000" />
       <workItem from="1757654651956" duration="82000" />
       <workItem from="1757774751518" duration="1200000" />
-      <workItem from="1757823618160" duration="1993000" />
+      <workItem from="1757823618160" duration="2106000" />
+      <workItem from="1757863974726" duration="864000" />
     </task>
     <task id="LOCAL-00001" summary="Code update">
       <option name="closed" value="true" />
@@ -218,7 +217,15 @@
       <option name="project" value="LOCAL" />
       <updated>1757654608622</updated>
     </task>
-    <option name="localTasksCounter" value="10" />
+    <task id="LOCAL-00010" summary="Code update">
+      <option name="closed" value="true" />
+      <created>1757825655387</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1757825655387</updated>
+    </task>
+    <option name="localTasksCounter" value="11" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">

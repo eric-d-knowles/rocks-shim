@@ -26,6 +26,6 @@ target_link_libraries(rocks_shim PRIVATE rocksdb_external)
 
 # Install everything
 install(TARGETS rocks_shim LIBRARY DESTINATION ".")
-install(FILES __init__.py DESTINATION ".")
+install(FILES ${CMAKE_SOURCE_DIR}/src/rocks_shim/__init__.py DESTINATION ".")
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/.libs/ DESTINATION ".libs"
   FILES_MATCHING PATTERN "librocksdb.so*")
