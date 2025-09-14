@@ -135,10 +135,10 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
     o.compression = rocksdb::kLZ4Compression;         // fast mid-levels
     o.bottommost_compression = rocksdb::kZSTD;        // compact cold data
     {
-      rocksdb::CompressionOptions copt;
-      copt.level = 3;                                 // mild ZSTD for speed
-      copt.max_dict_bytes = 0;                        // keep CPU light
-      o.compression_opts = copt;
+      rocksdb::CompressionOptions comp_opts;
+      comp_opts.level = 3;                                 // mild ZSTD for speed
+      comp_opts.max_dict_bytes = 0;                        // keep CPU light
+      o.compression_opts = comp_opts;
     }
 
     // -------- Table / cache options
@@ -170,7 +170,7 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
       rocksdb::LRUCacheOptions cache_opts;
       cache_opts.capacity = 20ull << 30;              // 20 GiB (good for multiple workers)
       cache_opts.num_shard_bits = 8;                  // good default at this size
-      cache_opts.strict_capacity_limit = true;        // avoid cache runaway
+      cache_opts.strict_capacity_limit = false;       // avoid cache runaway
       cache_opts.high_pri_pool_ratio = 0.30;          // 30% reserved for index/filter/hot
       bbt.block_cache = rocksdb::NewLRUCache(cache_opts);
     }
@@ -220,19 +220,19 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
 
     // -------- Memtables / WAL
     o.allow_concurrent_memtable_write = true;
-    o.write_buffer_size = 256ull << 20;               // 256 MiB per memtable
-    o.max_write_buffer_number = 8;
+    o.write_buffer_size = 512ull << 20;     // 512 MiB
+    o.max_write_buffer_number = 12;         // Up to ~6 GiB total
+    o.max_total_wal_size = 16ull << 30;     // 16 GiB WAL
     o.min_write_buffer_number_to_merge = 2;
-    o.max_total_wal_size = 8ull << 30;                // 8 GiB
 
     // -------- Compression (keep CPU light during ingest)
     o.compression = rocksdb::kNoCompression;
     o.bottommost_compression = rocksdb::kZSTD;        // applied when you compact later
     {
-      rocksdb::CompressionOptions c;
-      c.level = 3;
-      c.max_dict_bytes = 0;
-      o.compression_opts = c;
+      rocksdb::CompressionOptions comp_opts;
+      comp_opts.level = 3;
+      comp_opts.max_dict_bytes = 0;
+      o.compression_opts = comp_opts;
     }
 
     // -------- Table options (skip Bloom during ingest)
@@ -247,12 +247,12 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
 
     // Cache can be small; we’re not optimizing reads now
     {
-      rocksdb::LRUCacheOptions c;
-      c.capacity = 16ull << 30;                       // 16 GiB
-      c.num_shard_bits = 8;
-      c.strict_capacity_limit = true;
-      c.high_pri_pool_ratio = 0.20;
-      bbt.block_cache = rocksdb::NewLRUCache(c);
+      rocksdb::LRUCacheOptions cache_opts;
+      cache_opts.capacity = 16ull << 30;                       // 16 GiB
+      cache_opts.num_shard_bits = 8;
+      cache_opts.strict_capacity_limit = false;
+      cache_opts.high_pri_pool_ratio = 0.20;
+      bbt.block_cache = rocksdb::NewLRUCache(cache_opts);
     }
 
     bbt.cache_index_and_filter_blocks = true;
