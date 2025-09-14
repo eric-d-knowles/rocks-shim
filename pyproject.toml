@@ -2,7 +2,6 @@
 requires = [
     "scikit-build-core>=0.9",
     "pybind11>=2.12",
-    # Don't include cmake - scikit-build-core handles it
 ]
 build-backend = "scikit_build_core.build"
 
@@ -12,21 +11,16 @@ version = "0.1.0"
 description = "Python bindings for RocksDB with bundled library"
 requires-python = ">=3.8"
 license = {text = "Apache-2.0"}
-# Remove readme reference since you don't have README.md
 
 [tool.scikit-build]
 wheel.packages = []
 wheel.platlib = false
 cmake.build-type = "Release"
-
-# Use the newer configuration options
 cmake.version = ">=3.20"
 build.verbose = true
 
-# Build configuration
 wheel.install-dir = "rocks_shim"
 
-# Fix RPATH issues for portability
 cmake.args = [
     "-DCMAKE_INSTALL_RPATH=$ORIGIN:$ORIGIN/.libs",
     "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=OFF",
