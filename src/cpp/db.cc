@@ -168,7 +168,7 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
     // Block cache (RAM budget)
     {
       rocksdb::LRUCacheOptions cache_opts;
-      cache_opts.capacity = 14ull << 30;              // 20 GiB (good for multiple workers)
+      cache_opts.capacity = 20ull << 30;              // 20 GiB (good for multiple workers)
       cache_opts.num_shard_bits = 8;                  // good default at this size
       cache_opts.strict_capacity_limit = false;       // avoid cache runaway
       cache_opts.high_pri_pool_ratio = 0.30;          // 30% reserved for index/filter/hot
