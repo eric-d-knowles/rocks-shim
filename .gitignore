@@ -8,3 +8,5 @@ __pycache__/
 .cmake/
 wheelhouse/
 wheelhouse_temp/
+*.whl
+.DS_Store
