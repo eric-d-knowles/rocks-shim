@@ -110,9 +110,10 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
     o.compaction_readahead_size = 0;                  // NVMe: explicit readahead not helpful
 
     // -------- Concurrency / background work
-    o.max_background_jobs = 16;                       // total (compactions + flush)
-    o.max_background_compactions = 12;
-    o.max_background_flushes = 4;
+    o.max_background_jobs = 35;                       // total (compactions + flush)
+    o.max_background_compactions = 25;
+    o.max_background_flushes = 10;
+    o.max_subcompactions = 8;
     o.use_adaptive_mutex = true;
 
     // -------- LSM shape / compaction posture
@@ -168,7 +169,7 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
     // Block cache (RAM budget)
     {
       rocksdb::LRUCacheOptions cache_opts;
-      cache_opts.capacity = 20ull << 30;              // 20 GiB (good for multiple workers)
+      cache_opts.capacity = 32ull << 30;              // 32 GiB (good for multiple workers)
       cache_opts.num_shard_bits = 8;                  // good default at this size
       cache_opts.strict_capacity_limit = false;       // avoid cache runaway
       cache_opts.high_pri_pool_ratio = 0.30;          // 30% reserved for index/filter/hot
@@ -203,9 +204,9 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
     o.two_write_queues = true;
     o.unordered_write = true;                         // flip to false if you need global order
 
-    o.max_background_jobs = 24;
-    o.max_background_compactions = 16;                // harmless while disabled; useful if you flip later
-    o.max_background_flushes = 8;
+    o.max_background_jobs = 35;
+    o.max_background_compactions = 25;                // harmless while disabled; useful if you flip later
+    o.max_background_flushes = 10;
     o.max_subcompactions = 8;
 
     // -------- LSM posture for bulk ingest (let L0 grow without stalling)
@@ -220,8 +221,8 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
 
     // -------- Memtables / WAL
     o.allow_concurrent_memtable_write = true;
-    o.write_buffer_size = 512ull << 20;     // 512 MiB
-    o.max_write_buffer_number = 12;         // Up to ~6 GiB total
+    o.write_buffer_size = 1ull << 30;     // 512 MiB
+    o.max_write_buffer_number = 16;         // Up to ~6 GiB total
     o.max_total_wal_size = 16ull << 30;     // 16 GiB WAL
     o.min_write_buffer_number_to_merge = 2;
 
@@ -248,7 +249,7 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
     // Cache can be small; we’re not optimizing reads now
     {
       rocksdb::LRUCacheOptions cache_opts;
-      cache_opts.capacity = 16ull << 30;                       // 16 GiB
+      cache_opts.capacity = 32ull << 30;                       // 16 GiB
       cache_opts.num_shard_bits = 8;
       cache_opts.strict_capacity_limit = false;
       cache_opts.high_pri_pool_ratio = 0.20;
