@@ -180,7 +180,8 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
 
     // -------- Housekeeping / observability
     o.stats_dump_period_sec = 60;
-    o.skip_stats_update_on_db_open = true;
+    o.skip_stats_update_on_db_open = false;
+
   } else if (base == "write") {
     // -------- I/O (bulk ingest posture)
     o.allow_mmap_reads = false;
@@ -266,7 +267,7 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
     o.max_open_files = -1;
     o.max_file_opening_threads = 8;
     o.stats_dump_period_sec = 60;
-    o.skip_stats_update_on_db_open = true;
+    o.skip_stats_update_on_db_open = false;
   }
 };
 
