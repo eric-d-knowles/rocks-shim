@@ -60,8 +60,8 @@
       <window_info id="Backup and Sync History" />
       <window_info id="Commit_Guest" show_stripe_button="false" />
       <window_info id="Pull Requests" />
-      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.23867187" />
-      <window_info id="Commit" order="1" weight="0.23867187" />
+      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.23880208" />
+      <window_info id="Commit" order="1" weight="0.23880208" />
       <window_info id="Structure" order="2" side_tool="true" weight="0.25" />
       <window_info id="Learn" order="3" weight="0.20664063" />
       <window_info anchor="bottom" id="Database Changes" />
@@ -105,8 +105,8 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-js-predefined-d6986cc7102b-b598e85cdad2-JavaScript-PY-252.25557.178" />
-        <option value="bundled-python-sdk-ce6832f46686-7b97d883f26b-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-252.25557.178" />
+        <option value="bundled-js-predefined-d6986cc7102b-9c94529fcfe0-JavaScript-PY-252.26199.168" />
+        <option value="bundled-python-sdk-b3d66beaba9a-c6efb3732140-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-252.26199.168" />
       </set>
     </attachedChunks>
   </component>
@@ -153,6 +153,8 @@
       <workItem from="1758207245941" duration="617000" />
       <workItem from="1758208232406" duration="82000" />
       <workItem from="1758417164121" duration="151000" />
+      <workItem from="1758595936450" duration="644000" />
+      <workItem from="1758921552709" duration="279000" />
     </task>
     <task id="LOCAL-00001" summary="Code update">
       <option name="closed" value="true" />

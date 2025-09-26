@@ -169,8 +169,8 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
     // Block cache (RAM budget)
     {
       rocksdb::LRUCacheOptions cache_opts;
-      cache_opts.capacity = 32ull << 30;              // 32 GiB (good for multiple workers)
-      cache_opts.num_shard_bits = 8;                  // good default at this size
+      cache_opts.capacity = 4ull << 30;               // 4 GiB (good for many workers)
+      cache_opts.num_shard_bits = 6;                  // better for 4GB cache
       cache_opts.strict_capacity_limit = false;       // avoid cache runaway
       cache_opts.high_pri_pool_ratio = 0.30;          // 30% reserved for index/filter/hot
       bbt.block_cache = rocksdb::NewLRUCache(cache_opts);
@@ -250,8 +250,8 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
     // Cache can be small; we’re not optimizing reads now
     {
       rocksdb::LRUCacheOptions cache_opts;
-      cache_opts.capacity = 32ull << 30;                       // 16 GiB
-      cache_opts.num_shard_bits = 8;
+      cache_opts.capacity = 4ull << 30;                       // 4 GiB
+      cache_opts.num_shard_bits = 6;
       cache_opts.strict_capacity_limit = false;
       cache_opts.high_pri_pool_ratio = 0.20;
       bbt.block_cache = rocksdb::NewLRUCache(cache_opts);
