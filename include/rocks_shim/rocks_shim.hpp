@@ -53,6 +53,8 @@ public:
 
   virtual void FinalizeBulk() {}
   virtual void CompactAll() {}
+  virtual void CompactRange(const std::optional<std::string>& start,
+                           const std::optional<std::string>& end) {}
   virtual void SetProfile(const std::string&) {}
   virtual std::optional<std::string> GetProperty(const std::string&) { return std::nullopt; }
   virtual void IngestExternalFiles(const std::vector<std::string>&, bool /*move*/, bool /*write_global_seqno*/) {}

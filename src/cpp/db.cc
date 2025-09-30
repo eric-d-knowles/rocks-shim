@@ -191,7 +191,7 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
     o.wal_bytes_per_sync = 1 << 20;
     o.compaction_readahead_size = 0;                  // NVMe: readahead not needed
 
-    // -------- Turn OFF auto-compactions; we’ll compact manually later
+    // -------- Turn OFF auto-compactions; we'll compact manually later
     o.disable_auto_compactions = true;
 
     // Avoid write slowdowns tied to compaction debt (let L0 grow)
@@ -247,7 +247,7 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
     bbt.data_block_index_type = rocksdb::BlockBasedTableOptions::kDataBlockBinarySearch;
     bbt.checksum = rocksdb::kXXH3;
 
-    // Cache can be small; we’re not optimizing reads now
+    // Cache can be small; we're not optimizing reads now
     {
       rocksdb::LRUCacheOptions cache_opts;
       cache_opts.capacity = 4ull << 30;                       // 4 GiB
@@ -340,6 +340,31 @@ struct DbImpl : public DB {
     cro.bottommost_level_compaction = rocksdb::BottommostLevelCompaction::kForce; // force rebuild at bottom
     cro.allow_write_stall = true; // let RocksDB throttle if needed during full compaction
     auto st = db->CompactRange(cro, nullptr, nullptr);
+    if (!st.ok()) throw std::runtime_error(st.ToString());
+  }
+
+  // Compact specific key range
+  void CompactRange(const std::optional<std::string>& start,
+                    const std::optional<std::string>& end) override {
+    rocksdb::CompactRangeOptions cro;
+    cro.change_level = false;
+    cro.bottommost_level_compaction = rocksdb::BottommostLevelCompaction::kForce;
+    cro.allow_write_stall = true;
+
+    rocksdb::Slice* start_ptr = nullptr;
+    rocksdb::Slice* end_ptr = nullptr;
+    rocksdb::Slice start_slice, end_slice;
+
+    if (start.has_value()) {
+      start_slice = rocksdb::Slice(*start);
+      start_ptr = &start_slice;
+    }
+    if (end.has_value()) {
+      end_slice = rocksdb::Slice(*end);
+      end_ptr = &end_slice;
+    }
+
+    auto st = db->CompactRange(cro, start_ptr, end_ptr);
     if (!st.ok()) throw std::runtime_error(st.ToString());
   }
 

@@ -86,24 +86,23 @@ PYBIND11_MODULE(rocks_shim, m) {
          py::keep_alive<0,1>())
     .def("finalize_bulk", &rs::DB::FinalizeBulk, py::call_guard<py::gil_scoped_release>())
     .def("compact_all", &rs::DB::CompactAll, py::call_guard<py::gil_scoped_release>())
+    .def("compact_range", [](rs::DB& self, py::object start, py::object end) {
+        py::gil_scoped_release release;
+        std::optional<std::string> start_key;
+        std::optional<std::string> end_key;
+
+        if (!start.is_none()) {
+          start_key = std::string(py::bytes(start));
+        }
+        if (!end.is_none()) {
+          end_key = std::string(py::bytes(end));
+        }
+
+        self.CompactRange(start_key, end_key);
+      },
+      py::arg("start") = py::none(), py::arg("end") = py::none(),
+      "Compact a specific key range")
     .def("set_profile", &rs::DB::SetProfile, py::arg("profile"))
     .def("get_property", &rs::DB::GetProperty, py::arg("name"))
     .def("ingest", &rs::DB::IngestExternalFiles,
-         py::arg("paths"), py::kw_only(), py::arg("move")=true, py::arg("write_global_seqno")=false,
-         py::call_guard<py::gil_scoped_release>());
-
-  // --- Module-level convenience open() function ---
-  m.def("open",
-    [](const std::string& path, std::string mode, std::string profile, bool create_if_missing){
-      rs::OpenArgs a;
-      a.path = path;
-      a.read_only = (mode == "ro");
-      a.create_if_missing = create_if_missing && !a.read_only;
-      a.profile = profile;
-
-      py::gil_scoped_release release;
-      return rs::DB::Open(a);
-    },
-    py::arg("path"), py::kw_only(), py::arg("mode")="rw", py::arg("profile")="write", py::arg("create_if_missing")=true,
-    "Convenience function to open a database with specified mode and profile.");
-}
+         py::arg("paths"), py::kw_only(), py::arg("move")=true, py::arg("write_global_seqno")=false
