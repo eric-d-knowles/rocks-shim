@@ -222,7 +222,7 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
 
     // -------- Memtables / WAL
     o.allow_concurrent_memtable_write = true;
-    o.write_buffer_size = 1ull << 30;     // 512 MiB
+    o.write_buffer_size = 1ull << 30;       // 1 GiB
     o.max_write_buffer_number = 16;         // Up to ~6 GiB total
     o.max_total_wal_size = 16ull << 30;     // 16 GiB WAL
     o.min_write_buffer_number_to_merge = 2;

@@ -9,8 +9,6 @@ PYBIND11_MODULE(rocks_shim, m) {
   m.doc() = "High-performance RocksDB shim for Python";
 
   // --- Iterator Bindings ---
-  // Note: key() and value() now handle std::string_view for zero-copy views.
-  // GIL is released for I/O-bound operations (seek, next).
   py::class_<rs::Iterator, std::shared_ptr<rs::Iterator>>(m, "Iterator")
     .def("seek", &rs::Iterator::Seek, py::arg("lower"), py::call_guard<py::gil_scoped_release>())
     .def("valid", &rs::Iterator::Valid)
@@ -25,7 +23,6 @@ PYBIND11_MODULE(rocks_shim, m) {
     .def("next", &rs::Iterator::Next, py::call_guard<py::gil_scoped_release>());
 
   // --- WriteBatch Bindings ---
-  // GIL is released only on Commit(), as other operations are in-memory.
   py::class_<rs::WriteBatch, std::shared_ptr<rs::WriteBatch>>(m, "WriteBatch")
     .def("__enter__", [](std::shared_ptr<rs::WriteBatch> self){ return self; })
     .def("__exit__",  [](rs::WriteBatch& self, py::object exc_type, py::object, py::object){
@@ -35,7 +32,7 @@ PYBIND11_MODULE(rocks_shim, m) {
         } else {
           self.Discard();
         }
-        return false; // Do not suppress exceptions
+        return false;
     })
     .def("put",    [](rs::WriteBatch& self, py::bytes k, py::bytes v){ self.Put(std::string(k), std::string(v)); })
     .def("delete", [](rs::WriteBatch& self, py::bytes k){ self.Delete(std::string(k)); })
@@ -58,8 +55,6 @@ PYBIND11_MODULE(rocks_shim, m) {
     .def("__enter__", [](std::shared_ptr<rs::DB> self){ return self; })
     .def("__exit__",  [](rs::DB& self, py::object, py::object, py::object){ self.Close(); return false; })
     .def("close", &rs::DB::Close, py::call_guard<py::gil_scoped_release>())
-
-    // Pythonic __getitem__ that raises KeyError on miss
     .def("__getitem__", [](rs::DB& self, py::bytes k) {
         py::gil_scoped_release release;
         std::string out;
@@ -68,7 +63,6 @@ PYBIND11_MODULE(rocks_shim, m) {
         }
         throw py::key_error("Key not found");
     })
-    // .get() method that returns None on miss
     .def("get", [](rs::DB& self, py::bytes k) -> py::object {
         py::gil_scoped_release release;
         std::string out;
@@ -102,8 +96,22 @@ PYBIND11_MODULE(rocks_shim, m) {
       },
       py::arg("start") = py::none(), py::arg("end") = py::none(), py::arg("exclusive") = true,
       "Compact a specific key range")
-    .def("set_profile", &rs::DB::SetProfile, py::arg("profile"))
     .def("get_property", &rs::DB::GetProperty, py::arg("name"))
     .def("ingest", &rs::DB::IngestExternalFiles,
          py::arg("paths"), py::kw_only(), py::arg("move")=true, py::arg("write_global_seqno")=false);
+
+  // Module-level open function for api.py compatibility
+  m.def("open",
+    [](const std::string& path, const std::string& mode, bool create_if_missing, const std::string& profile){
+      rs::OpenArgs a;
+      a.path = path;
+      a.read_only = (mode == "r");
+      a.create_if_missing = create_if_missing;
+      a.profile = profile.empty() ? (a.read_only ? "read" : "write") : profile;
+
+      py::gil_scoped_release release;
+      return rs::DB::Open(a);
+    },
+    py::arg("path"), py::kw_only(), py::arg("mode")="rw",
+    py::arg("create_if_missing")=false, py::arg("profile") = "");
 }
