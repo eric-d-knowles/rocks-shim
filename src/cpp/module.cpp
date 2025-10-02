@@ -86,7 +86,7 @@ PYBIND11_MODULE(rocks_shim, m) {
          py::keep_alive<0,1>())
     .def("finalize_bulk", &rs::DB::FinalizeBulk, py::call_guard<py::gil_scoped_release>())
     .def("compact_all", &rs::DB::CompactAll, py::call_guard<py::gil_scoped_release>())
-    .def("compact_range", [](rs::DB& self, py::object start, py::object end) {
+    .def("compact_range", [](rs::DB& self, py::object start, py::object end, bool exclusive) {
         py::gil_scoped_release release;
         std::optional<std::string> start_key;
         std::optional<std::string> end_key;
@@ -98,9 +98,9 @@ PYBIND11_MODULE(rocks_shim, m) {
           end_key = std::string(py::bytes(end));
         }
 
-        self.CompactRange(start_key, end_key);
+        self.CompactRange(start_key, end_key, exclusive);
       },
-      py::arg("start") = py::none(), py::arg("end") = py::none(),
+      py::arg("start") = py::none(), py::arg("end") = py::none(), py::arg("exclusive") = true,
       "Compact a specific key range")
     .def("set_profile", &rs::DB::SetProfile, py::arg("profile"))
     .def("get_property", &rs::DB::GetProperty, py::arg("name"))

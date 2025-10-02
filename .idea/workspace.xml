@@ -62,8 +62,8 @@
       <window_info id="Backup and Sync History" />
       <window_info id="Commit_Guest" show_stripe_button="false" />
       <window_info id="Pull Requests" />
-      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.21354166" />
-      <window_info id="Commit" order="1" weight="0.21380208" />
+      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.15807292" />
+      <window_info id="Commit" order="1" weight="0.21354166" />
       <window_info id="Structure" order="2" side_tool="true" weight="0.25" />
       <window_info id="Learn" order="3" weight="0.20664063" />
       <window_info anchor="bottom" id="Database Changes" />
@@ -160,7 +160,9 @@
       <workItem from="1759086894243" duration="1580000" />
       <workItem from="1759091127120" duration="804000" />
       <workItem from="1759159398074" duration="1666000" />
-      <workItem from="1759275843908" duration="230000" />
+      <workItem from="1759275843908" duration="3233000" />
+      <workItem from="1759325022352" duration="709000" />
+      <workItem from="1759422390313" duration="459000" />
     </task>
     <task id="LOCAL-00001" summary="Code update">
       <option name="closed" value="true" />
@@ -282,7 +284,15 @@
       <option name="project" value="LOCAL" />
       <updated>1759159406562</updated>
     </task>
-    <option name="localTasksCounter" value="16" />
+    <task id="LOCAL-00016" summary="Code update">
+      <option name="closed" value="true" />
+      <created>1759276145362</created>
+      <option name="number" value="00016" />
+      <option name="presentableId" value="LOCAL-00016" />
+      <option name="project" value="LOCAL" />
+      <updated>1759276145362</updated>
+    </task>
+    <option name="localTasksCounter" value="17" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">

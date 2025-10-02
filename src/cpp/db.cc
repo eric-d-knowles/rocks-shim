@@ -336,17 +336,20 @@ struct DbImpl : public DB {
 
   void CompactAll() override {
     rocksdb::CompactRangeOptions cro;
+    cro.exclusive_manual_compaction = true;  // Full compaction should be exclusive
     cro.change_level = false;
-    cro.bottommost_level_compaction = rocksdb::BottommostLevelCompaction::kForce; // force rebuild at bottom
-    cro.allow_write_stall = true; // let RocksDB throttle if needed during full compaction
+    cro.bottommost_level_compaction = rocksdb::BottommostLevelCompaction::kForce;
+    cro.allow_write_stall = true;
     auto st = db->CompactRange(cro, nullptr, nullptr);
     if (!st.ok()) throw std::runtime_error(st.ToString());
   }
 
-  // Compact specific key range
+  // Compact specific key range with control over exclusivity
   void CompactRange(const std::optional<std::string>& start,
-                    const std::optional<std::string>& end) override {
+                    const std::optional<std::string>& end,
+                    bool exclusive) override {
     rocksdb::CompactRangeOptions cro;
+    cro.exclusive_manual_compaction = exclusive;  // Control parallel execution
     cro.change_level = false;
     cro.bottommost_level_compaction = rocksdb::BottommostLevelCompaction::kForce;
     cro.allow_write_stall = true;
