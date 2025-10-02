@@ -105,4 +105,5 @@ PYBIND11_MODULE(rocks_shim, m) {
     .def("set_profile", &rs::DB::SetProfile, py::arg("profile"))
     .def("get_property", &rs::DB::GetProperty, py::arg("name"))
     .def("ingest", &rs::DB::IngestExternalFiles,
-         py::arg("paths"), py::kw_only(), py::arg("move")=true, py::arg("write_global_seqno")=false
+         py::arg("paths"), py::kw_only(), py::arg("move")=true, py::arg("write_global_seqno")=false);
+}
