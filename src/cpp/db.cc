@@ -110,10 +110,10 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
     o.compaction_readahead_size = 0;                  // NVMe: explicit readahead not helpful
 
     // -------- Concurrency / background work
-    o.max_background_jobs = 35;                       // total (compactions + flush)
-    o.max_background_compactions = 25;
-    o.max_background_flushes = 10;
-    o.max_subcompactions = 8;
+    o.max_background_jobs = 36;                       // total (compactions + flush)
+    o.max_background_compactions = 28;
+    o.max_background_flushes = 8;
+    o.max_subcompactions = 20;
     o.use_adaptive_mutex = true;
 
     // -------- LSM shape / compaction posture
@@ -205,10 +205,10 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
     o.two_write_queues = true;
     o.unordered_write = true;                         // flip to false if you need global order
 
-    o.max_background_jobs = 35;
-    o.max_background_compactions = 25;                // harmless while disabled; useful if you flip later
-    o.max_background_flushes = 10;
-    o.max_subcompactions = 8;
+    o.max_background_jobs = 36;
+    o.max_background_compactions = 28;                // harmless while disabled; useful if you flip later
+    o.max_background_flushes = 8;
+    o.max_subcompactions = 28;
 
     // -------- LSM posture for bulk ingest (let L0 grow without stalling)
     o.compaction_pri = rocksdb::kByCompensatedSize;
