@@ -30,6 +30,10 @@ public:
   virtual void Put(const std::string& k, const std::string& v) = 0;
   virtual void Delete(const std::string& k) = 0;
   virtual void Merge(const std::string& k, const std::string& v) = 0;
+
+  // Batch operations for reduced Python→C++ overhead
+  virtual void MergeBatch(const std::vector<std::pair<std::string, std::string>>& items) = 0;
+
   virtual void Commit() = 0;
   virtual void Discard() {}
 };

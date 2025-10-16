@@ -66,6 +66,13 @@ struct WbImpl : public WriteBatch {
   void Delete(const std::string& k) override { batch.Delete(k); }
   void Merge(const std::string& k, const std::string& v) override { batch.Merge(k, v); }
 
+  // Batch merge: accept vector of (key, value) pairs
+  void MergeBatch(const std::vector<std::pair<std::string, std::string>>& items) override {
+    for (const auto& [k, v] : items) {
+      batch.Merge(k, v);
+    }
+  }
+
   void Commit() override {
     rocksdb::WriteOptions wo;
     wo.disableWAL = disable_wal;
