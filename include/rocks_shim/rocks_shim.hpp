@@ -32,6 +32,7 @@ public:
   virtual void Merge(const std::string& k, const std::string& v) = 0;
 
   // Batch operations for reduced Python→C++ overhead
+  virtual void PutBatch(const std::vector<std::pair<std::string, std::string>>& items) = 0;
   virtual void MergeBatch(const std::vector<std::pair<std::string, std::string>>& items) = 0;
 
   virtual void Commit() = 0;

@@ -66,6 +66,13 @@ struct WbImpl : public WriteBatch {
   void Delete(const std::string& k) override { batch.Delete(k); }
   void Merge(const std::string& k, const std::string& v) override { batch.Merge(k, v); }
 
+  // Batch put: accept vector of (key, value) pairs
+  void PutBatch(const std::vector<std::pair<std::string, std::string>>& items) override {
+    for (const auto& [k, v] : items) {
+      batch.Put(k, v);
+    }
+  }
+
   // Batch merge: accept vector of (key, value) pairs
   void MergeBatch(const std::vector<std::pair<std::string, std::string>>& items) override {
     for (const auto& [k, v] : items) {

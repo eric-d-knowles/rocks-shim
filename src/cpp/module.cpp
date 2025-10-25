@@ -37,6 +37,25 @@ PYBIND11_MODULE(rocks_shim, m) {
     .def("put",    [](rs::WriteBatch& self, py::bytes k, py::bytes v){ self.Put(std::string(k), std::string(v)); })
     .def("delete", [](rs::WriteBatch& self, py::bytes k){ self.Delete(std::string(k)); })
     .def("merge",  [](rs::WriteBatch& self, py::bytes k, py::bytes v){ self.Merge(std::string(k), std::string(v)); })
+    .def("put_batch", [](rs::WriteBatch& self, py::list items) {
+        // Convert Python list of tuples to C++ vector
+        std::vector<std::pair<std::string, std::string>> batch;
+        batch.reserve(items.size());
+
+        for (auto item : items) {
+            auto tuple = item.cast<py::tuple>();
+            if (tuple.size() != 2) {
+                throw std::invalid_argument("put_batch requires list of (key, value) tuples");
+            }
+            auto k = tuple[0].cast<py::bytes>();
+            auto v = tuple[1].cast<py::bytes>();
+            batch.emplace_back(std::string(k), std::string(v));
+        }
+
+        // Release GIL for bulk operation
+        py::gil_scoped_release release;
+        self.PutBatch(batch);
+    }, py::arg("items"), "Put multiple key-value pairs in a single call")
     .def("merge_batch", [](rs::WriteBatch& self, py::list items) {
         // Convert Python list of tuples to C++ vector
         std::vector<std::pair<std::string, std::string>> batch;
