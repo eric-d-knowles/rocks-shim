@@ -1,12 +1,48 @@
+# Python
 build/
 dist/
 *.egg-info/
 __pycache__/
 *.py[cod]
 *.so
+*.pyc
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# C++ build artifacts
 .cache/
 .cmake/
+*.o
+*.a
+*.dylib
+CMakeCache.txt
+CMakeFiles/
+
+# Project specific
 wheelhouse/
 wheelhouse_temp/
 *.whl
-.DS_Store
+
+# Virtual environments (if you use them)
+venv/
+env/
+ENV/
+.venv/
