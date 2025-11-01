@@ -152,4 +152,30 @@ PYBIND11_MODULE(rocks_shim, m) {
     },
     py::arg("path"), py::kw_only(), py::arg("mode")="rw",
     py::arg("create_if_missing")=false, py::arg("profile") = "");
+
+  // --- SstFileWriter Bindings ---
+  py::class_<rs::SstFileWriter, std::shared_ptr<rs::SstFileWriter>>(m, "SstFileWriter")
+    .def(py::init([]() {
+        py::gil_scoped_release release;
+        return rs::SstFileWriter::Create();
+      }), "Create a new SST file writer")
+    .def("__enter__", [](std::shared_ptr<rs::SstFileWriter> self){ return self; })
+    .def("__exit__",  [](rs::SstFileWriter& self, py::object, py::object, py::object){
+        py::gil_scoped_release release;
+        self.Finish();
+        return false;
+    })
+    .def("open", [](rs::SstFileWriter& self, const std::string& file_path) {
+        py::gil_scoped_release release;
+        self.Open(file_path);
+      }, py::arg("file_path"), "Open an SST file for writing")
+    .def("put", [](rs::SstFileWriter& self, py::bytes key, py::bytes value) {
+        py::gil_scoped_release release;
+        self.Put(std::string(key), std::string(value));
+      }, py::arg("key"), py::arg("value"), "Add a key-value pair (keys must be in sorted order)")
+    .def("finish", [](rs::SstFileWriter& self) {
+        py::gil_scoped_release release;
+        self.Finish();
+      }, "Finalize and close the SST file")
+    .def("file_size", &rs::SstFileWriter::FileSize, "Get current file size in bytes");
 }

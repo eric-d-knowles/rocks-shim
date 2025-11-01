@@ -4,11 +4,20 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="77e1ee04-a9b7-427b-b099-23fb310fcad4" name="Changes" comment="Added put_batch method" />
+    <list default="true" id="77e1ee04-a9b7-427b-b099-23fb310fcad4" name="Changes" comment="Added put_batch method">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/include/rocks_shim/rocks_shim.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/include/rocks_shim/rocks_shim.hpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/cpp/db.cc" beforeDir="false" afterPath="$PROJECT_DIR$/src/cpp/db.cc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/cpp/module.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/cpp/module.cpp" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="EmbeddingIndexingInfo">
+    <option name="cachedIndexableFilesCount" value="20" />
+    <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -52,8 +61,8 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-js-predefined-d6986cc7102b-3aa1da707db6-JavaScript-PY-252.26830.99" />
-        <option value="bundled-python-sdk-164cda30dcd9-0af03a5fa574-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-252.26830.99" />
+        <option value="bundled-js-predefined-d6986cc7102b-75c7c973e13d-JavaScript-PY-253.27864.50" />
+        <option value="bundled-python-sdk-a9a34e35382e-30684d0e00d4-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-253.27864.50" />
       </set>
     </attachedChunks>
   </component>
@@ -66,6 +75,8 @@
       <updated>1761414861114</updated>
       <workItem from="1761414862089" duration="4228000" />
       <workItem from="1761567990603" duration="49000" />
+      <workItem from="1762018484845" duration="629000" />
+      <workItem from="1762034236845" duration="316000" />
     </task>
     <task id="LOCAL-00001" summary="Added put_batch method">
       <option name="closed" value="true" />

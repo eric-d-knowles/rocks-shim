@@ -65,4 +65,15 @@ public:
   virtual void IngestExternalFiles(const std::vector<std::string>&, bool /*move*/, bool /*write_global_seqno*/) {}
 };
 
+class SstFileWriter {
+public:
+  static std::shared_ptr<SstFileWriter> Create();
+  virtual ~SstFileWriter() = default;
+
+  virtual void Open(const std::string& file_path) = 0;
+  virtual void Put(const std::string& key, const std::string& value) = 0;
+  virtual void Finish() = 0;
+  virtual uint64_t FileSize() = 0;
+};
+
 } // namespace rshim

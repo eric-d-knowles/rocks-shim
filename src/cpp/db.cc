@@ -9,6 +9,7 @@
 #include <rocksdb/options.h>
 #include <rocksdb/table.h>
 #include <rocksdb/utilities/options_util.h>
+#include <rocksdb/sst_file_writer.h>
 
 #include <memory>
 #include <optional>
@@ -401,6 +402,39 @@ struct DbImpl : public DB {
   }
 };
 
+// ---------------- SstFileWriter impl ----------------
+struct SstFileWriterImpl : public SstFileWriter {
+  std::unique_ptr<rocksdb::SstFileWriter> writer;
+  rocksdb::Options options;
+  rocksdb::EnvOptions env_options;
+
+  SstFileWriterImpl() {
+    // Use default options - compatible with most DBs
+    options = rocksdb::Options();
+    env_options = rocksdb::EnvOptions();
+    writer = std::make_unique<rocksdb::SstFileWriter>(env_options, options);
+  }
+
+  void Open(const std::string& file_path) override {
+    auto st = writer->Open(file_path);
+    if (!st.ok()) throw std::runtime_error(st.ToString());
+  }
+
+  void Put(const std::string& key, const std::string& value) override {
+    auto st = writer->Put(key, value);
+    if (!st.ok()) throw std::runtime_error(st.ToString());
+  }
+
+  void Finish() override {
+    auto st = writer->Finish();
+    if (!st.ok()) throw std::runtime_error(st.ToString());
+  }
+
+  uint64_t FileSize() override {
+    return writer->FileSize();
+  }
+};
+
 }  // namespace
 
 // -------- Factory --------
@@ -414,6 +448,10 @@ std::shared_ptr<DB> DB::Open(const OpenArgs& args) {
                          : rocksdb::DB::Open(o, args.path, &raw);
   if (!st.ok()) throw std::runtime_error(st.ToString());
   return std::make_shared<DbImpl>(std::unique_ptr<rocksdb::DB>(raw), args);
+}
+
+std::shared_ptr<SstFileWriter> SstFileWriter::Create() {
+  return std::make_shared<SstFileWriterImpl>();
 }
 
 } // namespace rshim
