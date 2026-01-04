@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: "Knowles"
+    given-names: "Eric D."
+title: "rocks-shim: Python bindings for RocksDB with optimized performance"
+version: 0.3.0
+date-released: 2024-11-01
+url: "https://github.com/eric-d-knowles/rocks-shim"
+repository-code: "https://github.com/eric-d-knowles/rocks-shim"
+license: MIT
+keywords:
+  - rocksdb
+  - database
+  - key-value store
+  - python bindings
+  - high performance
