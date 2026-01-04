@@ -257,3 +257,9 @@ Contributions welcome! Please open an issue or pull request on GitHub.
 - **GitHub**: https://github.com/eric-d-knowles/rocks-shim
 - **RocksDB**: https://rocksdb.org/
 - **Used by**: [chrono-text](https://github.com/eric-d-knowles/chrono-text) - Tools for temporal linguistic analysis
+
+## Support and Maintenance
+
+This project is provided as-is for research and development purposes. While issues and pull requests are welcome, there is no guarantee of response time or ongoing maintenance. The code is shared in the spirit of open science, but support is provided on a best-effort basis only.
+
+For critical production use, consider forking and maintaining your own version.
