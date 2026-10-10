@@ -21,7 +21,7 @@ Wheels for Linux x86_64 (Python 3.11-3.13) are attached to each
 the one for your Python version, e.g.
 
 ```bash
-pip install https://github.com/eric-d-knowles/rocks-shim/releases/download/0.4.0/rocks_shim-0.4.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+pip install https://github.com/eric-d-knowles/rocks-shim/releases/download/v0.4.0/rocks_shim-0.4.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 ```
 
 Or build from source (RocksDB, Snappy and LZ4 are downloaded and built
@@ -44,7 +44,7 @@ pip install .
 
 ### Releasing
 
-Publish a GitHub release with a version tag (e.g. `0.4.0`, matching
+Publish a GitHub release with a version tag (e.g. `v0.4.0`, matching
 `pyproject.toml`). The `wheels` workflow builds the manylinux wheels with
 [cibuildwheel](https://cibuildwheel.pypa.io) inside the official manylinux
 container, runs `tests/` against each wheel, and attaches them to the
