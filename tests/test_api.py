@@ -61,8 +61,35 @@ def test_packed24_merge_and_merge_batch():
             db.close()
 
 
+def test_close_with_live_iterator_and_batch():
+    """Objects that outlive DB.close() must not crash when collected, and the
+    closed handle raises instead of dereferencing a null pointer."""
+    with tempfile.TemporaryDirectory() as d:
+        db = rs.open(str(pathlib.Path(d) / "db"), mode="rw", create_if_missing=True)
+        db.put(b"a", b"1")
+        it = db.iterator()
+        it.seek(b"a")
+        wb = db.write_batch()
+        wb.put(b"b", b"2")
+        db.close()
+        assert it.valid() and it.key() == b"a"      # still backed by the live handle
+        try:
+            db.get(b"a")
+        except RuntimeError as e:
+            assert "closed" in str(e)
+        else:
+            raise AssertionError("get on a closed DB should raise")
+        del it, wb                                  # last references: the DB is destroyed here
+        db2 = rs.open(str(pathlib.Path(d) / "db"), mode="rw", create_if_missing=True)
+        try:
+            assert db2.get(b"a") == b"1"
+        finally:
+            db2.close()
+
+
 if __name__ == "__main__":
     test_put_get_iterate()
     test_packed24_merge_and_merge_batch()
+    test_close_with_live_iterator_and_batch()
     print("ok")
     sys.exit(0)

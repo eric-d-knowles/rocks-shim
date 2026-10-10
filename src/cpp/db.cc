@@ -32,10 +32,17 @@ static inline std::string base_profile(const std::string& prof) {
 }
 
 // ---------------- Iterator ----------------
+// Iterators and write batches share ownership of the rocksdb::DB: RocksDB
+// requires every iterator to be deleted before the DB is, and Python may
+// collect an iterator long after DB.close(). The handle is destroyed when the
+// last of {DB, iterators, batches} lets go. Members are declared so that the
+// iterator is destroyed before the DB it points into.
 struct ItImpl : public Iterator {
+  std::shared_ptr<rocksdb::DB> db;
   std::unique_ptr<rocksdb::Iterator> it;
 
-  explicit ItImpl(std::unique_ptr<rocksdb::Iterator> x) : it(std::move(x)) {}
+  ItImpl(std::shared_ptr<rocksdb::DB> d, std::unique_ptr<rocksdb::Iterator> x)
+      : db(std::move(d)), it(std::move(x)) {}
 
   void Seek(const std::string& lower) override { it->Seek(lower); }
   bool Valid() const override { return it->Valid(); }
@@ -55,13 +62,13 @@ struct ItImpl : public Iterator {
 
 // ---------------- WriteBatch ----------------
 struct WbImpl : public WriteBatch {
-  rocksdb::DB* db;
+  std::shared_ptr<rocksdb::DB> db;
   rocksdb::WriteBatch batch;
   bool disable_wal = false;
   bool sync = false;
 
-  explicit WbImpl(rocksdb::DB* d, bool dis=false, bool sy=false)
-      : db(d), disable_wal(dis), sync(sy) {}
+  explicit WbImpl(std::shared_ptr<rocksdb::DB> d, bool dis=false, bool sy=false)
+      : db(std::move(d)), disable_wal(dis), sync(sy) {}
 
   void Put(const std::string& k, const std::string& v) override { batch.Put(k, v); }
   void Delete(const std::string& k) override { batch.Delete(k); }
@@ -288,13 +295,21 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
 
 // ---------------- DB impl ----------------
 struct DbImpl : public DB {
-  std::unique_ptr<rocksdb::DB> db;
+  std::shared_ptr<rocksdb::DB> db;
   OpenArgs args;
 
-  DbImpl(std::unique_ptr<rocksdb::DB> d, OpenArgs a)
+  DbImpl(std::shared_ptr<rocksdb::DB> d, OpenArgs a)
       : db(std::move(d)), args(std::move(a)) {}
 
+  // Every operation goes through this: using a closed DB raises instead of
+  // dereferencing a null pointer.
+  rocksdb::DB& live() const {
+    if (!db) throw std::runtime_error("database is closed");
+    return *db;
+  }
+
   [[nodiscard]] bool Get(const std::string& k, std::string* out) override {
+    live();
     rocksdb::ReadOptions ro;
     auto s = db->Get(ro, k, out);
     if (s.IsNotFound()) return false;
@@ -303,35 +318,42 @@ struct DbImpl : public DB {
   }
 
   void Put(const std::string& k, const std::string& v) override {
+    live();
     rocksdb::WriteOptions wo;
     auto s = db->Put(wo, k, v);
     if (!s.ok()) throw std::runtime_error(s.ToString());
   }
 
   void Delete(const std::string& k) override {
+    live();
     rocksdb::WriteOptions wo;
     auto s = db->Delete(wo, k);
     if (!s.ok()) throw std::runtime_error(s.ToString());
   }
 
   void Merge(const std::string& k, const std::string& v) override {
+    live();
     rocksdb::WriteOptions wo;
     auto s = db->Merge(wo, k, v);
     if (!s.ok()) throw std::runtime_error(s.ToString());
   }
 
   std::shared_ptr<Iterator> NewIterator(bool fill_cache, std::size_t readahead_size) override {
+    live();
     rocksdb::ReadOptions ro;
     ro.fill_cache = fill_cache;
     if (readahead_size > 0) ro.readahead_size = readahead_size;
-    return std::make_shared<ItImpl>(std::unique_ptr<rocksdb::Iterator>(db->NewIterator(ro)));
+    return std::make_shared<ItImpl>(db, std::unique_ptr<rocksdb::Iterator>(db->NewIterator(ro)));
   }
 
   // Per-batch WAL/sync control
   std::shared_ptr<WriteBatch> NewWriteBatch(bool disable_wal=false, bool sync=false) override {
-    return std::make_shared<WbImpl>(db.get(), disable_wal, sync);
+    live();
+    return std::make_shared<WbImpl>(db, disable_wal, sync);
   }
 
+  // Releases this handle's reference; the rocksdb::DB is destroyed once no
+  // iterator or write batch refers to it either.
   void Close() override {
     if (!db) return;
     rocksdb::CancelAllBackgroundWork(db.get(), /*wait=*/false);
@@ -340,6 +362,7 @@ struct DbImpl : public DB {
 
   // ----- Optional API (wired) -----
   void FinalizeBulk() override {
+    live();
     // Make any WAL durable if it was enabled (ignore NotSupported).
     auto st1 = db->FlushWAL(/*sync=*/true);
     if (!st1.ok() && !st1.IsNotSupported()) throw std::runtime_error(st1.ToString());
@@ -352,6 +375,7 @@ struct DbImpl : public DB {
   }
 
   void CompactAll() override {
+    live();
     rocksdb::CompactRangeOptions cro;
     cro.exclusive_manual_compaction = true;  // Full compaction should be exclusive
     cro.change_level = false;
@@ -365,6 +389,7 @@ struct DbImpl : public DB {
   void CompactRange(const std::optional<std::string>& start,
                     const std::optional<std::string>& end,
                     bool exclusive) override {
+    live();
     rocksdb::CompactRangeOptions cro;
     cro.exclusive_manual_compaction = exclusive;  // Control parallel execution
     cro.change_level = false;
@@ -389,6 +414,7 @@ struct DbImpl : public DB {
   }
 
   std::optional<std::string> GetProperty(const std::string& name) override {
+    live();
     std::string out;
     if (!db->GetProperty(name, &out)) return std::nullopt;
     return out;
@@ -396,6 +422,7 @@ struct DbImpl : public DB {
 
   void IngestExternalFiles(const std::vector<std::string>& paths,
                            bool move, bool write_global_seqno) override {
+    live();
     rocksdb::IngestExternalFileOptions io;
     io.move_files = move;
     io.write_global_seqno = write_global_seqno;
@@ -449,7 +476,7 @@ std::shared_ptr<DB> DB::Open(const OpenArgs& args) {
                          ? rocksdb::DB::OpenForReadOnly(o, args.path, &raw)
                          : rocksdb::DB::Open(o, args.path, &raw);
   if (!st.ok()) throw std::runtime_error(st.ToString());
-  return std::make_shared<DbImpl>(std::unique_ptr<rocksdb::DB>(raw), args);
+  return std::make_shared<DbImpl>(std::shared_ptr<rocksdb::DB>(raw), args);
 }
 
 std::shared_ptr<SstFileWriter> SstFileWriter::Create() {
