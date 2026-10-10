@@ -5,16 +5,22 @@ include(ExternalProject)
 set(ROCKSDB_VERSION "10.5.1")
 set(SNAPPY_VERSION "1.1.10")
 set(LZ4_VERSION "1.9.4")
-set(VENDOR_CACHE_TAG 7)
-set(THIRD_PARTY_DIR ${CMAKE_BINARY_DIR}/third_party_${VENDOR_CACHE_TAG})
+set(VENDOR_CACHE_TAG 8)
+# The vendored builds live beside the source tree (not in the per-wheel build
+# directory) so that wheels for several Python versions share one RocksDB
+# build, and CI can cache it. Override with -DROCKS_SHIM_VENDOR_DIR=...
+set(ROCKS_SHIM_VENDOR_DIR "${CMAKE_SOURCE_DIR}/build/vendored_${VENDOR_CACHE_TAG}" CACHE PATH
+    "Where RocksDB, Snappy and LZ4 are downloaded, built and installed")
+set(THIRD_PARTY_DIR ${ROCKS_SHIM_VENDOR_DIR})
 set(CODECS_INSTALL_PREFIX ${THIRD_PARTY_DIR}/codec-install)
 set(ROCKSDB_INSTALL_PREFIX ${THIRD_PARTY_DIR}/rocksdb-install)
 
-# Library directory name. manylinux2014 installs to 'lib64' and Debian-based
-# hosts to 'lib'; we pass it to the RocksDB build explicitly so it is the same
-# everywhere.
-set(ROCKSDB_LIB_DIR_NAME "lib64")
-set(ROCKSDB_LIB_DIR ${ROCKSDB_INSTALL_PREFIX}/${ROCKSDB_LIB_DIR_NAME})
+# Everything is built static and linked into the extension module, so the
+# wheel is one self-contained .so: no bundled librocksdb.so, no RPATH, no
+# auditwheel copies. Install dirs are pinned to 'lib' (manylinux would pick
+# lib64, Debian lib) so the paths below hold on every host.
+set(ROCKSDB_LIB_DIR ${ROCKSDB_INSTALL_PREFIX}/lib)
+set(CODECS_LIB_DIR ${CODECS_INSTALL_PREFIX}/lib)
 
 # CMake 3.24+ timestamp handling
 if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.24")
@@ -46,6 +52,7 @@ ExternalProject_Add(snappy_ep
   BINARY_DIR ${THIRD_PARTY_DIR}/snappy-build
   CMAKE_ARGS
     -DCMAKE_INSTALL_PREFIX=${CODECS_INSTALL_PREFIX}
+    -DCMAKE_INSTALL_LIBDIR=lib
     -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
     -DBUILD_SHARED_LIBS=OFF
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
@@ -56,6 +63,7 @@ ExternalProject_Add(snappy_ep
   BUILD_COMMAND ${_ISOLATED_ENV} ${CMAKE_COMMAND} --build <BINARY_DIR>
   UPDATE_COMMAND ""
   ${_DOWNLOAD_EXTRACT_TIMESTAMP}
+  BUILD_BYPRODUCTS ${CODECS_LIB_DIR}/libsnappy.a
 )
 
 # Build LZ4 (static)
@@ -66,6 +74,7 @@ ExternalProject_Add(lz4_ep
   SOURCE_SUBDIR build/cmake
   CMAKE_ARGS
     -DCMAKE_INSTALL_PREFIX=${CODECS_INSTALL_PREFIX}
+    -DCMAKE_INSTALL_LIBDIR=lib
     -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
     -DBUILD_SHARED_LIBS=OFF
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
@@ -75,20 +84,22 @@ ExternalProject_Add(lz4_ep
   BUILD_COMMAND ${_ISOLATED_ENV} ${CMAKE_COMMAND} --build <BINARY_DIR>
   UPDATE_COMMAND ""
   ${_DOWNLOAD_EXTRACT_TIMESTAMP}
+  BUILD_BYPRODUCTS ${CODECS_LIB_DIR}/liblz4.a
 )
 
-# Build RocksDB (shared)
+# Build RocksDB (static)
 ExternalProject_Add(rocksdb_ep
   ${_ROCKSDB_SOURCE}
   SOURCE_DIR ${THIRD_PARTY_DIR}/rocksdb-src
   BINARY_DIR ${THIRD_PARTY_DIR}/rocksdb-build
   CMAKE_ARGS
     -DCMAKE_INSTALL_PREFIX=${ROCKSDB_INSTALL_PREFIX}
-    -DCMAKE_INSTALL_LIBDIR=${ROCKSDB_LIB_DIR_NAME}
+    -DCMAKE_INSTALL_LIBDIR=lib
     -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
     -DCMAKE_PREFIX_PATH=${CODECS_INSTALL_PREFIX}
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
-    -DBUILD_SHARED_LIBS=ON
+    -DBUILD_SHARED_LIBS=OFF
+    -DROCKSDB_BUILD_SHARED=OFF
     -DPORTABLE=ON
     -DUSE_RTTI=ON
     -DWITH_SNAPPY=ON
@@ -96,28 +107,30 @@ ExternalProject_Add(rocksdb_ep
     -DWITH_ZSTD=OFF
     -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DWITH_GFLAGS=OFF
     -DFAIL_ON_WARNINGS=OFF
-    "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-rpath,'\\\$ORIGIN'"
     ${_WARNING_FLAGS}
   BUILD_COMMAND ${_ISOLATED_ENV} ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
-  # Use the correct lib dir for copying
-  INSTALL_COMMAND ${CMAKE_COMMAND} -E copy_directory ${ROCKSDB_LIB_DIR} ${CMAKE_BINARY_DIR}/.libs
+  INSTALL_COMMAND ""
   DEPENDS snappy_ep lz4_ep
   UPDATE_COMMAND ""
   ${_DOWNLOAD_EXTRACT_TIMESTAMP}
-  # Use the correct lib dir for byproducts
-  BUILD_BYPRODUCTS
-    ${ROCKSDB_LIB_DIR}/librocksdb.so
-    ${ROCKSDB_LIB_DIR}/librocksdb.so.10
-    ${ROCKSDB_LIB_DIR}/librocksdb.so.10.5.1
+  BUILD_BYPRODUCTS ${ROCKSDB_LIB_DIR}/librocksdb.a
 )
 
-# Create imported target
-add_library(rocksdb_external SHARED IMPORTED GLOBAL)
+# Imported static targets, in link order: rocksdb needs the codecs after it.
+add_library(rocksdb_external STATIC IMPORTED GLOBAL)
 add_dependencies(rocksdb_external rocksdb_ep)
+set_target_properties(rocksdb_external PROPERTIES IMPORTED_LOCATION ${ROCKSDB_LIB_DIR}/librocksdb.a)
 
-# Use the correct lib dir for the imported location
+add_library(snappy_external STATIC IMPORTED GLOBAL)
+add_dependencies(snappy_external snappy_ep)
+set_target_properties(snappy_external PROPERTIES IMPORTED_LOCATION ${CODECS_LIB_DIR}/libsnappy.a)
+
+add_library(lz4_external STATIC IMPORTED GLOBAL)
+add_dependencies(lz4_external lz4_ep)
+set_target_properties(lz4_external PROPERTIES IMPORTED_LOCATION ${CODECS_LIB_DIR}/liblz4.a)
+
+find_package(Threads REQUIRED)
 set_target_properties(rocksdb_external PROPERTIES
-  IMPORTED_LOCATION ${ROCKSDB_LIB_DIR}/librocksdb.so
-)
+  INTERFACE_LINK_LIBRARIES "snappy_external;lz4_external;Threads::Threads;${CMAKE_DL_LIBS}")
 
-message(STATUS "RocksDB ${ROCKSDB_VERSION} will be built and bundled (skipping hash checks)")
+message(STATUS "RocksDB ${ROCKSDB_VERSION}, Snappy ${SNAPPY_VERSION} and LZ4 ${LZ4_VERSION} will be built static and linked into the extension")

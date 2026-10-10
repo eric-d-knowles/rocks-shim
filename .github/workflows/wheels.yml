@@ -1,10 +1,11 @@
 name: wheels
 
-# Builds the manylinux wheel (RocksDB bundled) with the repository's own
-# scripts, and attaches it to the GitHub release that triggered the run.
+# Builds the manylinux wheels (RocksDB, Snappy and LZ4 linked in) with
+# cibuildwheel, tests each wheel, and attaches them to the GitHub release
+# that triggered the run.
 #
-#   - publish a release on GitHub (tag e.g. 0.4.0)  -> wheel built and uploaded to it
-#   - "Run workflow" by hand                         -> wheel kept as a workflow artifact
+#   - publish a release on GitHub (tag e.g. 0.4.0)  -> wheels built and uploaded to it
+#   - "Run workflow" by hand                         -> wheels kept as a workflow artifact
 on:
   release:
     types: [published]
@@ -19,19 +20,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build manylinux wheel
-        run: bash scripts/build-manylinux-wheels.sh
+      # The vendored RocksDB build is the slow part (~20 min); keep it between
+      # runs, keyed by the dependency versions and build settings.
+      - uses: actions/cache@v4
+        with:
+          path: build
+          key: vendored-${{ hashFiles('cmake/BuildRocksDB.cmake', 'pyproject.toml') }}
 
-      - name: Smoke test the wheel
-        run: |
-          python3 -m venv /tmp/venv
-          /tmp/venv/bin/pip install --quiet wheelhouse/*.whl
-          /tmp/venv/bin/python tests/smoke_test.py rocks_shim
-          /tmp/venv/bin/python tests/test_api.py
+      - uses: pypa/cibuildwheel@v2.21.3
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wheel
+          name: wheels
           path: wheelhouse/*.whl
 
       - name: Attach to the release

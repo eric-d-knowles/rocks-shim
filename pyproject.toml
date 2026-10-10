@@ -8,22 +8,28 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "rocks-shim"
 version = "0.4.0"
-description = "Python bindings for RocksDB with bundled library"
-requires-python = ">=3.8"
+description = "Python bindings for RocksDB with the library linked in"
+requires-python = ">=3.9"
 license = {text = "Apache-2.0"}
 
 [tool.scikit-build]
+# The wheel is one compiled module plus rocks_shim/__init__.py, installed by
+# CMake; nothing is copied from src/ by scikit-build. It is a platform wheel
+# tagged for the interpreter it was built with (cp311-cp311-manylinux...).
 wheel.packages = []
-wheel.platlib = false
+wheel.install-dir = "rocks_shim"
 cmake.build-type = "Release"
 cmake.version = ">=3.20"
 build.verbose = true
+# A persistent build directory so the vendored RocksDB/Snappy/LZ4 builds
+# (20+ minutes) survive between wheel builds and can be cached in CI.
+build-dir = "build/{wheel_tag}"
 
-wheel.install-dir = "rocks_shim"
-
-cmake.args = [
-    "-DCMAKE_INSTALL_RPATH=$ORIGIN:$ORIGIN/.libs",
-    "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=OFF",
-    "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON",
-    "-DCMAKE_SKIP_BUILD_RPATH=ON"
-]
+[tool.cibuildwheel]
+# `cibuildwheel` runs the build inside the official manylinux container,
+# repairs and tags the wheel, and runs the tests against it:
+#   pipx run cibuildwheel --platform linux
+build = ["cp311-manylinux_x86_64", "cp312-manylinux_x86_64", "cp313-manylinux_x86_64"]
+manylinux-x86_64-image = "manylinux2014"
+build-verbosity = 1
+test-command = "python {project}/tests/test_api.py && python {project}/tests/test_sst_writer.py"
