@@ -1,0 +1,50 @@
+name: wheels
+
+# Builds the manylinux wheels (RocksDB, Snappy and LZ4 linked in) with
+# cibuildwheel, tests each wheel, and attaches them to the GitHub release
+# that triggered the run.
+#
+#   - publish a release on GitHub (tag e.g. 0.4.0)  -> wheels built and uploaded to it
+#   - "Run workflow" by hand                         -> wheels kept as a workflow artifact
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The vendored RocksDB build is the slow part (~20 min); keep it between
+      # runs, keyed by the dependency versions and build settings.
+      - uses: actions/cache@v4
+        with:
+          path: build
+          key: vendored-${{ hashFiles('cmake/BuildRocksDB.cmake', 'pyproject.toml') }}
+
+      - name: Build the wheels
+        run: |
+          pipx run cibuildwheel==2.21.3 --output-dir wheelhouse 2>&1 | tee cibw.log
+          exit "${PIPESTATUS[0]}"
+
+      # The job log is the place to look; this repeats the lines around the
+      # first error as annotations, which are also visible through the API.
+      - name: Surface the error
+        if: failure()
+        run: python3 .github/annotate_errors.py cibw.log
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels
+          path: wheelhouse/*.whl
+
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" wheelhouse/*.whl --clobber

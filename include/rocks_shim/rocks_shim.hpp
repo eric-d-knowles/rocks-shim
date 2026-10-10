@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>       // For std::shared_ptr
+#include <cstddef>      // For std::size_t
 #include <string>       // For std::string
 #include <string_view>  // For std::string_view
 #include <vector>       // For std::vector
@@ -51,7 +52,12 @@ public:
   virtual void Delete(const std::string& k) = 0;
   virtual void Merge(const std::string& k, const std::string& v) = 0;
 
-  virtual std::shared_ptr<Iterator>   NewIterator() = 0;
+  // fill_cache=false keeps a sequential scan from pulling every data block
+  // through the block cache (RocksDB ReadOptions::fill_cache); use it for
+  // one-pass scans by many worker processes, where the cache is pure overhead.
+  // readahead_size > 0 sets ReadOptions::readahead_size for the scan.
+  virtual std::shared_ptr<Iterator>   NewIterator(bool fill_cache = true,
+                                                  std::size_t readahead_size = 0) = 0;
 
   // Allow callers to control WAL/sync per batch
   virtual std::shared_ptr<WriteBatch> NewWriteBatch(bool disable_wal = false, bool sync = false) = 0;

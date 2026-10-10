@@ -93,43 +93,49 @@ PYBIND11_MODULE(rocks_shim, m) {
     .def("__enter__", [](std::shared_ptr<rs::DB> self){ return self; })
     .def("__exit__",  [](rs::DB& self, py::object, py::object, py::object){ self.Close(); return false; })
     .def("close", &rs::DB::Close, py::call_guard<py::gil_scoped_release>())
+    // Python objects (py::bytes in, py::bytes out, exceptions) are only
+    // touched while holding the GIL; it is released around the RocksDB call.
     .def("__getitem__", [](rs::DB& self, py::bytes k) {
-        py::gil_scoped_release release;
-        std::string out;
-        if (self.Get(std::string(k), &out)) {
-            return py::bytes(out);
+        std::string key(k), out;
+        bool found;
+        {
+          py::gil_scoped_release release;
+          found = self.Get(key, &out);
         }
-        throw py::key_error("Key not found");
+        if (!found) throw py::key_error("Key not found");
+        return py::bytes(out);
     })
     .def("get", [](rs::DB& self, py::bytes k) -> py::object {
-        py::gil_scoped_release release;
-        std::string out;
-        if (self.Get(std::string(k), &out)) {
-            return py::bytes(out);
+        std::string key(k), out;
+        bool found;
+        {
+          py::gil_scoped_release release;
+          found = self.Get(key, &out);
         }
-        return py::none();
+        if (!found) return py::none();
+        return py::bytes(out);
       })
-    .def("put",    [](rs::DB& self, py::bytes k, py::bytes v){ py::gil_scoped_release r; self.Put(std::string(k), std::string(v)); })
-    .def("delete", [](rs::DB& self, py::bytes k){ py::gil_scoped_release r; self.Delete(std::string(k)); })
-    .def("merge",  [](rs::DB& self, py::bytes k, py::bytes v){ py::gil_scoped_release r; self.Merge(std::string(k), std::string(v)); })
-    .def("iterator", &rs::DB::NewIterator, py::keep_alive<0,1>())
+    .def("put",    [](rs::DB& self, py::bytes k, py::bytes v){ std::string key(k), val(v); py::gil_scoped_release r; self.Put(key, val); })
+    .def("delete", [](rs::DB& self, py::bytes k){ std::string key(k); py::gil_scoped_release r; self.Delete(key); })
+    .def("merge",  [](rs::DB& self, py::bytes k, py::bytes v){ std::string key(k), val(v); py::gil_scoped_release r; self.Merge(key, val); })
+    .def("iterator", &rs::DB::NewIterator,
+         py::kw_only(), py::arg("fill_cache") = true, py::arg("readahead_size") = 0,
+         py::keep_alive<0,1>(),
+         "Create an iterator. fill_cache=False keeps a one-pass scan from filling the "
+         "block cache (recommended for scans by many worker processes); "
+         "readahead_size (bytes) enables explicit readahead for sequential scans.")
     .def("write_batch", &rs::DB::NewWriteBatch,
          py::kw_only(), py::arg("disable_wal") = false, py::arg("sync") = false,
          py::keep_alive<0,1>())
     .def("finalize_bulk", &rs::DB::FinalizeBulk, py::call_guard<py::gil_scoped_release>())
     .def("compact_all", &rs::DB::CompactAll, py::call_guard<py::gil_scoped_release>())
     .def("compact_range", [](rs::DB& self, py::object start, py::object end, bool exclusive) {
-        py::gil_scoped_release release;
         std::optional<std::string> start_key;
         std::optional<std::string> end_key;
+        if (!start.is_none()) start_key = std::string(py::bytes(start));
+        if (!end.is_none()) end_key = std::string(py::bytes(end));
 
-        if (!start.is_none()) {
-          start_key = std::string(py::bytes(start));
-        }
-        if (!end.is_none()) {
-          end_key = std::string(py::bytes(end));
-        }
-
+        py::gil_scoped_release release;
         self.CompactRange(start_key, end_key, exclusive);
       },
       py::arg("start") = py::none(), py::arg("end") = py::none(), py::arg("exclusive") = true,
@@ -170,8 +176,9 @@ PYBIND11_MODULE(rocks_shim, m) {
         self.Open(file_path);
       }, py::arg("file_path"), "Open an SST file for writing")
     .def("put", [](rs::SstFileWriter& self, py::bytes key, py::bytes value) {
+        std::string k(key), v(value);
         py::gil_scoped_release release;
-        self.Put(std::string(key), std::string(value));
+        self.Put(k, v);
       }, py::arg("key"), py::arg("value"), "Add a key-value pair (keys must be in sorted order)")
     .def("finish", [](rs::SstFileWriter& self) {
         py::gil_scoped_release release;

@@ -2,7 +2,7 @@
 
 **High-performance Python bindings for RocksDB with bundled dependencies**
 
-`rocks-shim` provides optimized Python bindings for RocksDB, a persistent key-value store for fast storage. Unlike other Python RocksDB bindings, rocks-shim bundles RocksDB and its compression dependencies (Snappy, LZ4, Zstandard) into a self-contained wheel, eliminating system dependency issues and simplifying deployment.
+`rocks-shim` provides optimized Python bindings for RocksDB, a persistent key-value store for fast storage. Unlike other Python RocksDB bindings, rocks-shim links RocksDB and its compression dependencies (Snappy, LZ4) statically into a single extension module, eliminating system dependency issues and simplifying deployment.
 
 ## Features
 
@@ -16,11 +16,17 @@
 
 ## Installation
 
+Wheels for Linux x86_64 (Python 3.11-3.13) are attached to each
+[release](https://github.com/eric-d-knowles/rocks-shim/releases); install
+the one for your Python version, e.g.
+
 ```bash
-pip install https://github.com/eric-d-knowles/rocks-shim/releases/download/0.3.0/rocks_shim-0.3.0-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+pip install https://github.com/eric-d-knowles/rocks-shim/releases/download/0.4.0/rocks_shim-0.4.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 ```
 
-Or build from source:
+Or build from source (RocksDB, Snappy and LZ4 are downloaded and built
+during the install, which takes 15-30 minutes; they are kept under `build/`
+so a rebuild is fast):
 
 ```bash
 git clone https://github.com/eric-d-knowles/rocks-shim.git
@@ -30,10 +36,21 @@ pip install .
 
 ### Build Requirements
 
-- Python 3.8+
-- CMake 3.20+
-- C++17 compatible compiler
-- pybind11 2.12+
+- Python 3.9+
+- CMake 3.20+ and Ninja (installed automatically by scikit-build-core if missing)
+- C++17 compiler
+- network access to github.com (release tarballs; pass
+  `-C cmake.define.ROCKS_SHIM_VENDOR_GIT=ON` to fetch by git clone instead)
+
+### Releasing
+
+Publish a GitHub release with a version tag (e.g. `0.4.0`, matching
+`pyproject.toml`). The `wheels` workflow builds the manylinux wheels with
+[cibuildwheel](https://cibuildwheel.pypa.io) inside the official manylinux
+container, runs `tests/` against each wheel, and attaches them to the
+release. "Run workflow" on the Actions tab builds them as an artifact
+without a release. The same build can be run locally with Docker:
+`pipx run cibuildwheel --platform linux`.
 
 ## Quick Start
 
@@ -64,14 +81,20 @@ db.Close()
 
 ```python
 # Iterate over keys
-it = db.NewIterator()
-it.Seek("start_key")  # Position iterator
+it = db.iterator()
+it.seek(b"start_key")   # position the iterator
 
-while it.Valid():
-    key = it.Key()      # Returns bytes-like view
-    value = it.Value()  # Returns bytes-like view
+while it.valid():
+    key = it.key()        # bytes
+    value = it.value()    # bytes
     print(f"{key}: {value}")
-    it.Next()
+    it.next()
+
+# A one-pass scan should not pull every block through the block cache
+# (each profile reserves a 4 GiB cache per process, and a scan would fill
+# it). Workers that scan a key range once should open their iterator with
+# fill_cache=False; readahead_size (bytes) adds explicit readahead.
+it = db.iterator(fill_cache=False, readahead_size=2 << 20)
 ```
 
 ### Batch Operations
@@ -217,7 +240,7 @@ rocks-shim uses a two-layer design:
 1. **C++ layer** - Thin wrapper around RocksDB's C++ API with optimized batch operations
 2. **Python bindings** - pybind11-based interface exposing C++ functionality
 
-All dependencies (RocksDB 10.5.1, Snappy 1.1.10, LZ4 1.9.4, Zstandard) are statically linked and bundled in the wheel with proper RPATH configuration for portability.
+RocksDB 10.5.1, Snappy 1.1.10 and LZ4 1.9.4 are built from source and linked statically into the extension module, so the wheel is a single self-contained `.so` with no bundled shared libraries and no RPATH dependencies. RocksDB's symbols are kept private to the module.
 
 ## Comparison with python-rocksdb
 
@@ -240,7 +263,7 @@ If you use rocks-shim in your research, please cite it:
   title = {rocks-shim: Python bindings for RocksDB with optimized performance},
   year = {2024},
   url = {https://github.com/eric-d-knowles/rocks-shim},
-  version = {0.3.0}
+  version = {0.4.0}
 }
 ```
 
