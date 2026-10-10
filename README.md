@@ -263,7 +263,7 @@ If you use rocks-shim in your research, please cite it:
   title = {rocks-shim: Python bindings for RocksDB with optimized performance},
   year = {2024},
   url = {https://github.com/eric-d-knowles/rocks-shim},
-  version = {0.3.0}
+  version = {0.4.0}
 }
 ```
 
