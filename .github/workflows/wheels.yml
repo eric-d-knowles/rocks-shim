@@ -29,7 +29,16 @@ jobs:
           path: build
           key: vendored-${{ hashFiles('cmake/BuildRocksDB.cmake', 'pyproject.toml') }}
 
-      - uses: pypa/cibuildwheel@v2.21.3
+      - name: Build the wheels
+        run: |
+          pipx run cibuildwheel==2.21.3 --output-dir wheelhouse 2>&1 | tee cibw.log
+          exit "${PIPESTATUS[0]}"
+
+      # The job log is the place to look; this repeats the lines around the
+      # first error as annotations, which are also visible through the API.
+      - name: Surface the error
+        if: failure()
+        run: python3 .github/annotate_errors.py cibw.log
 
       - uses: actions/upload-artifact@v4
         with:
