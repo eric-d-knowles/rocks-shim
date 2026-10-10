@@ -10,8 +10,9 @@ set(THIRD_PARTY_DIR ${CMAKE_BINARY_DIR}/third_party_${VENDOR_CACHE_TAG})
 set(CODECS_INSTALL_PREFIX ${THIRD_PARTY_DIR}/codec-install)
 set(ROCKSDB_INSTALL_PREFIX ${THIRD_PARTY_DIR}/rocksdb-install)
 
-# Define the library directory name. manylinux2014 (and other 64-bit Linux distros)
-# often use 'lib64', so we explicitly set it here to avoid ambiguity.
+# Library directory name. manylinux2014 installs to 'lib64' and Debian-based
+# hosts to 'lib'; we pass it to the RocksDB build explicitly so it is the same
+# everywhere.
 set(ROCKSDB_LIB_DIR_NAME "lib64")
 set(ROCKSDB_LIB_DIR ${ROCKSDB_INSTALL_PREFIX}/${ROCKSDB_LIB_DIR_NAME})
 
@@ -20,18 +21,32 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.24")
   set(_DOWNLOAD_EXTRACT_TIMESTAMP DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
 endif()
 
+# Where the sources come from: release tarballs (default) or shallow git
+# clones of the same tags, for build hosts that allow git but not arbitrary
+# downloads (e.g. behind an allow-listing proxy).
+option(ROCKS_SHIM_VENDOR_GIT "Fetch RocksDB, Snappy and LZ4 with git instead of release tarballs" OFF)
+if(ROCKS_SHIM_VENDOR_GIT)
+  set(_SNAPPY_SOURCE GIT_REPOSITORY https://github.com/google/snappy.git GIT_TAG ${SNAPPY_VERSION} GIT_SHALLOW TRUE GIT_SUBMODULES "")
+  set(_LZ4_SOURCE GIT_REPOSITORY https://github.com/lz4/lz4.git GIT_TAG v${LZ4_VERSION} GIT_SHALLOW TRUE GIT_SUBMODULES "")
+  set(_ROCKSDB_SOURCE GIT_REPOSITORY https://github.com/facebook/rocksdb.git GIT_TAG v${ROCKSDB_VERSION} GIT_SHALLOW TRUE GIT_SUBMODULES "")
+else()
+  set(_SNAPPY_SOURCE URL "https://github.com/google/snappy/archive/refs/tags/${SNAPPY_VERSION}.tar.gz")
+  set(_LZ4_SOURCE URL "https://github.com/lz4/lz4/archive/refs/tags/v${LZ4_VERSION}.tar.gz")
+  set(_ROCKSDB_SOURCE URL "https://github.com/facebook/rocksdb/archive/refs/tags/v${ROCKSDB_VERSION}.tar.gz")
+endif()
+
 # Common settings
 set(_WARNING_FLAGS -DCMAKE_C_FLAGS=-Wno-error=attributes -DCMAKE_CXX_FLAGS=-Wno-error=attributes)
 set(_ISOLATED_ENV ${CMAKE_COMMAND} -E env LDFLAGS= CFLAGS= CXXFLAGS= CPPFLAGS= LIBRARY_PATH= LD_RUN_PATH= PKG_CONFIG_PATH=)
 
 # Build Snappy (static)
 ExternalProject_Add(snappy_ep
-  URL "https://github.com/google/snappy/archive/refs/tags/${SNAPPY_VERSION}.tar.gz"
+  ${_SNAPPY_SOURCE}
   SOURCE_DIR ${THIRD_PARTY_DIR}/snappy-src
   BINARY_DIR ${THIRD_PARTY_DIR}/snappy-build
   CMAKE_ARGS
     -DCMAKE_INSTALL_PREFIX=${CODECS_INSTALL_PREFIX}
-    -DCMAKE_BUILD_type=${CMAKE_BUILD_TYPE}
+    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
     -DBUILD_SHARED_LIBS=OFF
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     -DSNAPPY_BUILD_TESTS=OFF
@@ -45,13 +60,13 @@ ExternalProject_Add(snappy_ep
 
 # Build LZ4 (static)
 ExternalProject_Add(lz4_ep
-  URL "https://github.com/lz4/lz4/archive/refs/tags/v${LZ4_VERSION}.tar.gz"
+  ${_LZ4_SOURCE}
   SOURCE_DIR ${THIRD_PARTY_DIR}/lz4-src
   BINARY_DIR ${THIRD_PARTY_DIR}/lz4-build
   SOURCE_SUBDIR build/cmake
   CMAKE_ARGS
     -DCMAKE_INSTALL_PREFIX=${CODECS_INSTALL_PREFIX}
-    -DCMAKE_BUILD_type=${CMAKE_BUILD_TYPE}
+    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
     -DBUILD_SHARED_LIBS=OFF
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     -DLZ4_BUILD_CLI=OFF
@@ -64,12 +79,13 @@ ExternalProject_Add(lz4_ep
 
 # Build RocksDB (shared)
 ExternalProject_Add(rocksdb_ep
-  URL "https://github.com/facebook/rocksdb/archive/refs/tags/v${ROCKSDB_VERSION}.tar.gz"
+  ${_ROCKSDB_SOURCE}
   SOURCE_DIR ${THIRD_PARTY_DIR}/rocksdb-src
   BINARY_DIR ${THIRD_PARTY_DIR}/rocksdb-build
   CMAKE_ARGS
     -DCMAKE_INSTALL_PREFIX=${ROCKSDB_INSTALL_PREFIX}
-    -DCMAKE_BUILD_type=${CMAKE_BUILD_TYPE}
+    -DCMAKE_INSTALL_LIBDIR=${ROCKSDB_LIB_DIR_NAME}
+    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
     -DCMAKE_PREFIX_PATH=${CODECS_INSTALL_PREFIX}
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     -DBUILD_SHARED_LIBS=ON

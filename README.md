@@ -64,14 +64,20 @@ db.Close()
 
 ```python
 # Iterate over keys
-it = db.NewIterator()
-it.Seek("start_key")  # Position iterator
+it = db.iterator()
+it.seek(b"start_key")   # position the iterator
 
-while it.Valid():
-    key = it.Key()      # Returns bytes-like view
-    value = it.Value()  # Returns bytes-like view
+while it.valid():
+    key = it.key()        # bytes
+    value = it.value()    # bytes
     print(f"{key}: {value}")
-    it.Next()
+    it.next()
+
+# A one-pass scan should not pull every block through the block cache
+# (each profile reserves a 4 GiB cache per process, and a scan would fill
+# it). Workers that scan a key range once should open their iterator with
+# fill_cache=False; readahead_size (bytes) adds explicit readahead.
+it = db.iterator(fill_cache=False, readahead_size=2 << 20)
 ```
 
 ### Batch Operations

@@ -320,8 +320,10 @@ struct DbImpl : public DB {
     if (!s.ok()) throw std::runtime_error(s.ToString());
   }
 
-  std::shared_ptr<Iterator> NewIterator() override {
+  std::shared_ptr<Iterator> NewIterator(bool fill_cache, std::size_t readahead_size) override {
     rocksdb::ReadOptions ro;
+    ro.fill_cache = fill_cache;
+    if (readahead_size > 0) ro.readahead_size = readahead_size;
     return std::make_shared<ItImpl>(std::unique_ptr<rocksdb::Iterator>(db->NewIterator(ro)));
   }
 

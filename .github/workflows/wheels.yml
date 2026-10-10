@@ -1,0 +1,41 @@
+name: wheels
+
+# Builds the manylinux wheel (RocksDB bundled) with the repository's own
+# scripts, and attaches it to the GitHub release that triggered the run.
+#
+#   - publish a release on GitHub (tag e.g. 0.4.0)  -> wheel built and uploaded to it
+#   - "Run workflow" by hand                         -> wheel kept as a workflow artifact
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build manylinux wheel
+        run: bash scripts/build-manylinux-wheels.sh
+
+      - name: Smoke test the wheel
+        run: |
+          python3 -m venv /tmp/venv
+          /tmp/venv/bin/pip install --quiet wheelhouse/*.whl
+          /tmp/venv/bin/python tests/smoke_test.py rocks_shim
+          /tmp/venv/bin/python tests/test_api.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel
+          path: wheelhouse/*.whl
+
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" wheelhouse/*.whl --clobber

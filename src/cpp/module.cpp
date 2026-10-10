@@ -112,7 +112,12 @@ PYBIND11_MODULE(rocks_shim, m) {
     .def("put",    [](rs::DB& self, py::bytes k, py::bytes v){ py::gil_scoped_release r; self.Put(std::string(k), std::string(v)); })
     .def("delete", [](rs::DB& self, py::bytes k){ py::gil_scoped_release r; self.Delete(std::string(k)); })
     .def("merge",  [](rs::DB& self, py::bytes k, py::bytes v){ py::gil_scoped_release r; self.Merge(std::string(k), std::string(v)); })
-    .def("iterator", &rs::DB::NewIterator, py::keep_alive<0,1>())
+    .def("iterator", &rs::DB::NewIterator,
+         py::kw_only(), py::arg("fill_cache") = true, py::arg("readahead_size") = 0,
+         py::keep_alive<0,1>(),
+         "Create an iterator. fill_cache=False keeps a one-pass scan from filling the "
+         "block cache (recommended for scans by many worker processes); "
+         "readahead_size (bytes) enables explicit readahead for sequential scans.")
     .def("write_batch", &rs::DB::NewWriteBatch,
          py::kw_only(), py::arg("disable_wal") = false, py::arg("sync") = false,
          py::keep_alive<0,1>())
