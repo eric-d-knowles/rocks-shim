@@ -4,12 +4,11 @@ import re
 import sys
 
 lines = open(sys.argv[1], errors="replace").read().splitlines()
-pat = re.compile(r"\berror\b|FAILED|fatal|Traceback|undefined reference|No space left", re.I)
-benign = re.compile(r"Wno-error|-Werror|No such image|error_if|errors=|error\.py|Error response from daemon")
-hits = [i for i, line in enumerate(lines) if pat.search(line) and not benign.search(line)]
-# cibuildwheel's own closing summary repeats the failure; prefer the first cause.
-first = hits[0] if hits else len(lines) - 60
-start = max(0, first - 15)
+# Precise markers: ninja's failed step, compiler/linker diagnostics, CMake and
+# Python errors. Probe results like "pthread - Failed" and docker noise don't match.
+pat = re.compile(r"^\s*FAILED: |\berror: |\bError: |CMake Error|Traceback \(most recent|undefined reference|No space left|ld returned")
+hits = [i for i, line in enumerate(lines) if pat.search(line) and "Wno-error" not in line]
+start = max(0, hits[0] - 15) if hits else max(0, len(lines) - 80)
 chunk = lines[start:start + 80]
 for i in range(0, len(chunk), 8):
     part = chunk[i:i + 8]
