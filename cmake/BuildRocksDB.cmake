@@ -41,10 +41,27 @@ else()
   set(_ROCKSDB_SOURCE URL "https://github.com/facebook/rocksdb/archive/refs/tags/v${ROCKSDB_VERSION}.tar.gz")
 endif()
 
-# Common settings
+# Common settings. The sub-builds get the same make program as this build:
+# wheels for several Python versions share the vendored directory, and each
+# pip build runs with a different temporary ninja, so a path discovered by
+# the first build must not be kept in the sub-builds' caches.
 set(_WARNING_FLAGS -DCMAKE_C_FLAGS=-Wno-error=attributes -DCMAKE_CXX_FLAGS=-Wno-error=attributes)
+set(_COMMON_ARGS -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM} ${_WARNING_FLAGS})
 set(_ISOLATED_ENV ${CMAKE_COMMAND} -E env LDFLAGS= CFLAGS= CXXFLAGS= CPPFLAGS= LIBRARY_PATH= LD_RUN_PATH= PKG_CONFIG_PATH=)
 
+# Once the libraries are installed in the vendored directory nothing is
+# rebuilt or even reconfigured: later wheel builds (and CI cache hits) link
+# against them directly. Bump VENDOR_CACHE_TAG when a setting above changes.
+if(EXISTS ${ROCKSDB_LIB_DIR}/librocksdb.a AND EXISTS ${CODECS_LIB_DIR}/libsnappy.a
+   AND EXISTS ${CODECS_LIB_DIR}/liblz4.a AND EXISTS ${ROCKSDB_INSTALL_PREFIX}/include/rocksdb/db.h)
+  set(_VENDOR_READY TRUE)
+  message(STATUS "Using the RocksDB ${ROCKSDB_VERSION} build already in ${THIRD_PARTY_DIR}")
+else()
+  set(_VENDOR_READY FALSE)
+  message(STATUS "RocksDB ${ROCKSDB_VERSION}, Snappy ${SNAPPY_VERSION} and LZ4 ${LZ4_VERSION} will be built static in ${THIRD_PARTY_DIR}")
+endif()
+
+if(NOT _VENDOR_READY)
 # Build Snappy (static)
 ExternalProject_Add(snappy_ep
   ${_SNAPPY_SOURCE}
@@ -59,7 +76,7 @@ ExternalProject_Add(snappy_ep
     -DSNAPPY_BUILD_TESTS=OFF
     -DSNAPPY_BUILD_BENCHMARKS=OFF
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-    ${_WARNING_FLAGS}
+    ${_COMMON_ARGS}
   BUILD_COMMAND ${_ISOLATED_ENV} ${CMAKE_COMMAND} --build <BINARY_DIR>
   UPDATE_COMMAND ""
   ${_DOWNLOAD_EXTRACT_TIMESTAMP}
@@ -80,7 +97,7 @@ ExternalProject_Add(lz4_ep
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     -DLZ4_BUILD_CLI=OFF
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-    ${_WARNING_FLAGS}
+    ${_COMMON_ARGS}
   BUILD_COMMAND ${_ISOLATED_ENV} ${CMAKE_COMMAND} --build <BINARY_DIR>
   UPDATE_COMMAND ""
   ${_DOWNLOAD_EXTRACT_TIMESTAMP}
@@ -107,7 +124,7 @@ ExternalProject_Add(rocksdb_ep
     -DWITH_ZSTD=OFF
     -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DWITH_GFLAGS=OFF
     -DFAIL_ON_WARNINGS=OFF
-    ${_WARNING_FLAGS}
+    ${_COMMON_ARGS}
   BUILD_COMMAND ${_ISOLATED_ENV} ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
   INSTALL_COMMAND ""
   DEPENDS snappy_ep lz4_ep
@@ -115,22 +132,25 @@ ExternalProject_Add(rocksdb_ep
   ${_DOWNLOAD_EXTRACT_TIMESTAMP}
   BUILD_BYPRODUCTS ${ROCKSDB_LIB_DIR}/librocksdb.a
 )
+endif()  # NOT _VENDOR_READY
 
 # Imported static targets, in link order: rocksdb needs the codecs after it.
 add_library(rocksdb_external STATIC IMPORTED GLOBAL)
-add_dependencies(rocksdb_external rocksdb_ep)
 set_target_properties(rocksdb_external PROPERTIES IMPORTED_LOCATION ${ROCKSDB_LIB_DIR}/librocksdb.a)
 
 add_library(snappy_external STATIC IMPORTED GLOBAL)
-add_dependencies(snappy_external snappy_ep)
 set_target_properties(snappy_external PROPERTIES IMPORTED_LOCATION ${CODECS_LIB_DIR}/libsnappy.a)
 
 add_library(lz4_external STATIC IMPORTED GLOBAL)
-add_dependencies(lz4_external lz4_ep)
 set_target_properties(lz4_external PROPERTIES IMPORTED_LOCATION ${CODECS_LIB_DIR}/liblz4.a)
+
+if(NOT _VENDOR_READY)
+  add_dependencies(rocksdb_external rocksdb_ep)
+  add_dependencies(snappy_external snappy_ep)
+  add_dependencies(lz4_external lz4_ep)
+endif()
 
 find_package(Threads REQUIRED)
 set_target_properties(rocksdb_external PROPERTIES
   INTERFACE_LINK_LIBRARIES "snappy_external;lz4_external;Threads::Threads;${CMAKE_DL_LIBS}")
 
-message(STATUS "RocksDB ${ROCKSDB_VERSION}, Snappy ${SNAPPY_VERSION} and LZ4 ${LZ4_VERSION} will be built static and linked into the extension")
