@@ -87,9 +87,30 @@ def test_close_with_live_iterator_and_batch():
             db2.close()
 
 
+def test_bottommost_level_is_zstd_compressed():
+    """The profiles write level 0 uncompressed and compress the bottommost
+    level with ZSTD; if ZSTD were not linked in, RocksDB would silently fall
+    back to no compression and compaction would not shrink the data."""
+    with tempfile.TemporaryDirectory() as d:
+        db = rs.open(str(pathlib.Path(d) / "db"), mode="rw", profile="write", create_if_missing=True)
+        try:
+            with db.write_batch(disable_wal=True) as wb:
+                for i in range(20000):
+                    wb.put(f"key{i:08d}".encode(), b"the quick brown fox " * 10)
+            db.finalize_bulk()
+            before = int(db.get_property("rocksdb.total-sst-files-size"))
+            db.compact_all()
+            after = int(db.get_property("rocksdb.total-sst-files-size"))
+            assert before > 2_000_000 and after < before / 5, (before, after)
+            assert db.get(b"key00000042") == b"the quick brown fox " * 10
+        finally:
+            db.close()
+
+
 if __name__ == "__main__":
     test_put_get_iterate()
     test_packed24_merge_and_merge_batch()
     test_close_with_live_iterator_and_batch()
+    test_bottommost_level_is_zstd_compressed()
     print("ok")
     sys.exit(0)

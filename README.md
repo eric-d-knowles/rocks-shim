@@ -2,7 +2,7 @@
 
 **High-performance Python bindings for RocksDB with bundled dependencies**
 
-`rocks-shim` provides optimized Python bindings for RocksDB, a persistent key-value store for fast storage. Unlike other Python RocksDB bindings, rocks-shim links RocksDB and its compression dependencies (Snappy, LZ4) statically into a single extension module, eliminating system dependency issues and simplifying deployment.
+`rocks-shim` provides optimized Python bindings for RocksDB, a persistent key-value store for fast storage. Unlike other Python RocksDB bindings, rocks-shim links RocksDB and its compression dependencies (Snappy, LZ4, ZSTD) statically into a single extension module, eliminating system dependency issues and simplifying deployment.
 
 ## Features
 
@@ -10,7 +10,7 @@
 - **Optimized for performance** - C++ implementation with minimal Python overhead
 - **Batch operations** - `PutBatch` and `MergeBatch` for reduced Python→C++ call overhead
 - **Custom merge operators** - Built-in `packed24` merge operator for efficient streaming data
-- **Configurable profiles** - Pre-tuned settings for read-heavy, write-heavy, or bulk operations
+- **Configurable profiles** - Pre-tuned `write` (bulk ingest) and `read` (serving) settings
 - **SST file writing** - Direct creation of RocksDB SST files for bulk ingestion
 - **Portable wheels** - Works across different Linux distributions without recompilation
 
@@ -21,10 +21,10 @@ Wheels for Linux x86_64 (Python 3.11-3.13) are attached to each
 the one for your Python version, e.g.
 
 ```bash
-pip install https://github.com/eric-d-knowles/rocks-shim/releases/download/v0.4.0/rocks_shim-0.4.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+pip install https://github.com/eric-d-knowles/rocks-shim/releases/download/v0.5.0/rocks_shim-0.5.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 ```
 
-Or build from source (RocksDB, Snappy and LZ4 are downloaded and built
+Or build from source (RocksDB, Snappy, LZ4 and ZSTD are downloaded and built
 during the install, which takes 15-30 minutes; they are kept under `build/`
 so a rebuild is fast):
 
@@ -44,7 +44,7 @@ pip install .
 
 ### Releasing
 
-Publish a GitHub release with a version tag (e.g. `v0.4.0`, matching
+Publish a GitHub release with a version tag (e.g. `v0.5.0`, matching
 `pyproject.toml`). The `wheels` workflow builds the manylinux wheels with
 [cibuildwheel](https://cibuildwheel.pypa.io) inside the official manylinux
 container, runs `tests/` against each wheel, and attaches them to the
@@ -63,7 +63,7 @@ import rocks_shim as rs
 db = rs.DB.Open(rs.OpenArgs(
     path="/path/to/db",
     create_if_missing=True,
-    profile="write"  # "write", "read", or "bulk"
+    profile="write"  # "write" or "read"
 ))
 
 # Put/Get
@@ -153,27 +153,26 @@ db.IngestExternalFiles(
 
 ## Profiles
 
-rocks-shim includes pre-configured profiles optimized for different workloads:
+rocks-shim includes pre-configured profiles for the two phases of a corpus
+database's life:
 
-- **`write`** - Default profile for general write-heavy workloads
-  - Optimized block cache and write buffer
-  - Balanced compression settings
-  
-- **`read`** - Optimized for read-heavy workloads
-  - Larger block cache
-  - More aggressive compression
-  
-- **`bulk`** - Optimized for bulk data loading
-  - Disabled WAL
-  - Large write buffers
-  - Minimal compaction during writes
+- **`write`** - bulk ingest. Auto-compaction off, 1 GiB memtables, level 0
+  written uncompressed, no Bloom filters. Call `finalize_bulk()` and then
+  `compact_all()` when the load is complete: the compaction writes the
+  bottommost level with ZSTD (level 3).
+- **`read`** - serving lookups and scans. Direct I/O, partitioned Bloom
+  filters and two-level indexes, LZ4 on the middle levels and ZSTD at the
+  bottom, 4 GiB block cache.
+
+Both accept a `:packed24` suffix (`write:packed24`) that installs the
+`packed24` merge operator described below.
 
 ```python
 # Select profile when opening database
 db = rs.DB.Open(rs.OpenArgs(
     path="/path/to/db",
     create_if_missing=True,
-    profile="bulk"
+    profile="read"
 ))
 ```
 
@@ -230,7 +229,7 @@ db.Merge("ngram_key", record)
 1. **Use batch operations** - `PutBatch` and `MergeBatch` are significantly faster than individual `Put`/`Merge` calls
 2. **Disable WAL for bulk loads** - Use `NewWriteBatch(disable_wal=True)` when durability isn't critical
 3. **Use SST file ingestion** - For very large bulk loads, creating SST files externally and ingesting is fastest
-4. **Choose the right profile** - Use `bulk` profile for initial data loading, `read` for read-heavy workloads
+4. **Choose the right profile** - Use the `write` profile for loading, `read` for read-heavy workloads
 5. **Compact after bulk operations** - Call `CompactAll()` after large imports to optimize read performance
 
 ## Architecture
@@ -240,7 +239,7 @@ rocks-shim uses a two-layer design:
 1. **C++ layer** - Thin wrapper around RocksDB's C++ API with optimized batch operations
 2. **Python bindings** - pybind11-based interface exposing C++ functionality
 
-RocksDB 10.5.1, Snappy 1.1.10 and LZ4 1.9.4 are built from source and linked statically into the extension module, so the wheel is a single self-contained `.so` with no bundled shared libraries and no RPATH dependencies. RocksDB's symbols are kept private to the module.
+RocksDB 10.5.1, Snappy 1.1.10, LZ4 1.9.4 and ZSTD 1.5.6 are built from source and linked statically into the extension module, so the wheel is a single self-contained `.so` with no bundled shared libraries and no RPATH dependencies. RocksDB's symbols are kept private to the module.
 
 ## Comparison with python-rocksdb
 
@@ -263,7 +262,7 @@ If you use rocks-shim in your research, please cite it:
   title = {rocks-shim: Python bindings for RocksDB with optimized performance},
   year = {2024},
   url = {https://github.com/eric-d-knowles/rocks-shim},
-  version = {0.4.0}
+  version = {0.5.0}
 }
 ```
 
