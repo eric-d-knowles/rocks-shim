@@ -5,6 +5,7 @@
 #include <rocksdb/cache.h>
 #include <rocksdb/db.h>
 #include <rocksdb/env.h>
+#include <rocksdb/metadata.h>
 #include <rocksdb/filter_policy.h>
 #include <rocksdb/options.h>
 #include <rocksdb/table.h>
@@ -417,6 +418,18 @@ struct DbImpl : public DB {
     live();
     std::string out;
     if (!db->GetProperty(name, &out)) return std::nullopt;
+    return out;
+  }
+
+  std::vector<LiveFile> LiveFiles() override {
+    live();
+    std::vector<rocksdb::LiveFileMetaData> meta;
+    db->GetLiveFilesMetaData(&meta);
+    std::vector<LiveFile> out;
+    out.reserve(meta.size());
+    for (const auto& m : meta) {
+      out.push_back(LiveFile{m.smallestkey, m.largestkey, m.size, m.level});
+    }
     return out;
   }
 

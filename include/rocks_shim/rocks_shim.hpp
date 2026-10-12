@@ -1,6 +1,7 @@
 #pragma once
 #include <memory>       // For std::shared_ptr
 #include <cstddef>      // For std::size_t
+#include <cstdint>      // For std::uint64_t
 #include <string>       // For std::string
 #include <string_view>  // For std::string_view
 #include <vector>       // For std::vector
@@ -40,6 +41,14 @@ public:
   virtual void Discard() {}
 };
 
+// One SST file of an open database: its key range, size and level.
+struct LiveFile {
+  std::string smallest_key;
+  std::string largest_key;
+  std::uint64_t size = 0;
+  int level = 0;
+};
+
 class DB {
 public:
   static std::shared_ptr<DB> Open(const OpenArgs& args);
@@ -68,6 +77,9 @@ public:
                            const std::optional<std::string>& end,
                            bool exclusive = true) {}  // Added exclusive parameter with default true
   virtual std::optional<std::string> GetProperty(const std::string&) { return std::nullopt; }
+  // Metadata of every live SST file (RocksDB GetLiveFilesMetaData): the key
+  // distribution of the database without scanning it.
+  virtual std::vector<LiveFile> LiveFiles() { return {}; }
   virtual void IngestExternalFiles(const std::vector<std::string>&, bool /*move*/, bool /*write_global_seqno*/) {}
 };
 
