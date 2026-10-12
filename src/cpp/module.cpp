@@ -141,6 +141,20 @@ PYBIND11_MODULE(rocks_shim, m) {
       py::arg("start") = py::none(), py::arg("end") = py::none(), py::arg("exclusive") = true,
       "Compact a specific key range")
     .def("get_property", &rs::DB::GetProperty, py::arg("name"))
+    .def("live_files", [](rs::DB& self) {
+        std::vector<rs::LiveFile> files;
+        {
+          py::gil_scoped_release release;
+          files = self.LiveFiles();
+        }
+        py::list out;
+        for (const auto& f : files) {
+          out.append(py::make_tuple(py::bytes(f.smallest_key), py::bytes(f.largest_key), f.size, f.level));
+        }
+        return out;
+      },
+      "Metadata of every live SST file as (smallest_key, largest_key, size_bytes, level) tuples, "
+      "in no particular order. Gives the key distribution of the database without scanning it.")
     .def("ingest", &rs::DB::IngestExternalFiles,
          py::arg("paths"), py::kw_only(), py::arg("move")=true, py::arg("write_global_seqno")=false);
 

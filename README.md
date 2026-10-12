@@ -21,7 +21,7 @@ Wheels for Linux x86_64 (Python 3.11-3.13) are attached to each
 the one for your Python version, e.g.
 
 ```bash
-pip install https://github.com/eric-d-knowles/rocks-shim/releases/download/v0.5.0/rocks_shim-0.5.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+pip install https://github.com/eric-d-knowles/rocks-shim/releases/download/v0.6.0/rocks_shim-0.6.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 ```
 
 Or build from source (RocksDB, Snappy, LZ4 and ZSTD are downloaded and built
@@ -44,7 +44,7 @@ pip install .
 
 ### Releasing
 
-Publish a GitHub release with a version tag (e.g. `v0.5.0`, matching
+Publish a GitHub release with a version tag (e.g. `v0.6.0`, matching
 `pyproject.toml`). The `wheels` workflow builds the manylinux wheels with
 [cibuildwheel](https://cibuildwheel.pypa.io) inside the official manylinux
 container, runs `tests/` against each wheel, and attaches them to the
@@ -204,6 +204,16 @@ if stats:
 size = db.GetProperty("rocksdb.total-sst-files-size")
 ```
 
+### Key distribution without a scan
+
+```python
+# One tuple per SST file: (smallest_key, largest_key, size_bytes, level).
+# Sorting by key and accumulating sizes gives density-balanced key ranges
+# for parallel workers in milliseconds, without reading the data.
+for lo, hi, size, level in db.live_files():
+    ...
+```
+
 ### Custom Merge Operator: packed24
 
 The bundled `packed24` merge operator efficiently merges sorted streams of 24-byte records (8-byte key + 8-byte count + 8-byte volume). This is optimized for time-series data with frequency counts.
@@ -262,7 +272,7 @@ If you use rocks-shim in your research, please cite it:
   title = {rocks-shim: Python bindings for RocksDB with optimized performance},
   year = {2024},
   url = {https://github.com/eric-d-knowles/rocks-shim},
-  version = {0.5.0}
+  version = {0.6.0}
 }
 ```
 

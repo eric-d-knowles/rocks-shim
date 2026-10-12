@@ -107,10 +107,32 @@ def test_bottommost_level_is_zstd_compressed():
             db.close()
 
 
+def test_live_files_describe_the_key_space():
+    with tempfile.TemporaryDirectory() as d:
+        db = rs.open(str(pathlib.Path(d) / "db"), mode="rw", profile="write", create_if_missing=True)
+        try:
+            assert db.live_files() == []                      # nothing flushed yet
+            with db.write_batch(disable_wal=True) as wb:
+                for i in range(50000):
+                    wb.put(f"key{i:08d}".encode(), b"v" * 100)
+            db.finalize_bulk()
+            files = db.live_files()
+            assert files, "flushed data must appear as SST files"
+            lo = min(f[0] for f in files)
+            hi = max(f[1] for f in files)
+            assert lo == b"key00000000" and hi == b"key00049999"
+            assert all(isinstance(f[2], int) and f[2] > 0 and isinstance(f[3], int) for f in files)
+            db.compact_all()
+            assert all(f[3] >= 1 for f in db.live_files())    # compaction moved them off level 0
+        finally:
+            db.close()
+
+
 if __name__ == "__main__":
     test_put_get_iterate()
     test_packed24_merge_and_merge_batch()
     test_close_with_live_iterator_and_batch()
     test_bottommost_level_is_zstd_compressed()
+    test_live_files_describe_the_key_space()
     print("ok")
     sys.exit(0)
