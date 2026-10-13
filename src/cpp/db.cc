@@ -487,9 +487,19 @@ struct SstFileWriterImpl : public SstFileWriter {
   rocksdb::Options options;
   rocksdb::EnvOptions env_options;
 
-  SstFileWriterImpl() {
-    // Use default options - compatible with most DBs
+  SstFileWriterImpl(const std::string& compression, int level) {
+    // Default options (compatible with any DB) plus the requested compression.
     options = rocksdb::Options();
+    if (compression == "none") {
+      options.compression = rocksdb::kNoCompression;
+    } else if (compression == "lz4") {
+      options.compression = rocksdb::kLZ4Compression;
+    } else if (compression == "zstd") {
+      options.compression = rocksdb::kZSTD;
+      options.compression_opts.level = level;
+    } else {
+      throw std::invalid_argument("Unknown compression: '" + compression + "'. Valid: none, lz4, zstd");
+    }
     env_options = rocksdb::EnvOptions();
     writer = std::make_unique<rocksdb::SstFileWriter>(env_options, options);
   }
@@ -501,6 +511,11 @@ struct SstFileWriterImpl : public SstFileWriter {
 
   void Put(const std::string& key, const std::string& value) override {
     auto st = writer->Put(key, value);
+    if (!st.ok()) throw std::runtime_error(st.ToString());
+  }
+
+  void Merge(const std::string& key, const std::string& value) override {
+    auto st = writer->Merge(key, value);
     if (!st.ok()) throw std::runtime_error(st.ToString());
   }
 
@@ -529,8 +544,8 @@ std::shared_ptr<DB> DB::Open(const OpenArgs& args) {
   return std::make_shared<DbImpl>(std::shared_ptr<rocksdb::DB>(raw), args);
 }
 
-std::shared_ptr<SstFileWriter> SstFileWriter::Create() {
-  return std::make_shared<SstFileWriterImpl>();
+std::shared_ptr<SstFileWriter> SstFileWriter::Create(const std::string& compression, int compression_level) {
+  return std::make_shared<SstFileWriterImpl>(compression, compression_level);
 }
 
 } // namespace rshim

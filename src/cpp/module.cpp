@@ -175,10 +175,11 @@ PYBIND11_MODULE(rocks_shim, m) {
 
   // --- SstFileWriter Bindings ---
   py::class_<rs::SstFileWriter, std::shared_ptr<rs::SstFileWriter>>(m, "SstFileWriter")
-    .def(py::init([]() {
+    .def(py::init([](const std::string& compression, int compression_level) {
         py::gil_scoped_release release;
-        return rs::SstFileWriter::Create();
-      }), "Create a new SST file writer")
+        return rs::SstFileWriter::Create(compression, compression_level);
+      }), py::kw_only(), py::arg("compression") = "none", py::arg("compression_level") = 3,
+      "Create a new SST file writer. compression: 'none', 'lz4' or 'zstd' (level applies to zstd).")
     .def("__enter__", [](std::shared_ptr<rs::SstFileWriter> self){ return self; })
     .def("__exit__",  [](rs::SstFileWriter& self, py::object, py::object, py::object){
         py::gil_scoped_release release;
@@ -194,6 +195,13 @@ PYBIND11_MODULE(rocks_shim, m) {
         py::gil_scoped_release release;
         self.Put(k, v);
       }, py::arg("key"), py::arg("value"), "Add a key-value pair (keys must be in sorted order)")
+    .def("merge", [](rs::SstFileWriter& self, py::bytes key, py::bytes value) {
+        std::string k(key), v(value);
+        py::gil_scoped_release release;
+        self.Merge(k, v);
+      }, py::arg("key"), py::arg("value"),
+      "Add a merge operand (keys in sorted order). The database's merge operator "
+      "combines it with other operands for the key when the file is ingested and compacted.")
     .def("finish", [](rs::SstFileWriter& self) {
         py::gil_scoped_release release;
         self.Finish();

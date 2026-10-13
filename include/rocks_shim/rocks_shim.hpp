@@ -85,11 +85,16 @@ public:
 
 class SstFileWriter {
 public:
-  static std::shared_ptr<SstFileWriter> Create();
+  // compression: "none", "lz4" or "zstd" for the file's data blocks; level
+  // applies to zstd. Files written with Merge entries are summed by the
+  // database's merge operator at compaction, like any other merge operand.
+  static std::shared_ptr<SstFileWriter> Create(const std::string& compression = "none",
+                                               int compression_level = 3);
   virtual ~SstFileWriter() = default;
 
   virtual void Open(const std::string& file_path) = 0;
   virtual void Put(const std::string& key, const std::string& value) = 0;
+  virtual void Merge(const std::string& key, const std::string& value) = 0;
   virtual void Finish() = 0;
   virtual uint64_t FileSize() = 0;
 };
