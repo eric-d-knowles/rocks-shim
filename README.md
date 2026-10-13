@@ -21,7 +21,7 @@ Wheels for Linux x86_64 (Python 3.11-3.13) are attached to each
 the one for your Python version, e.g.
 
 ```bash
-pip install https://github.com/eric-d-knowles/rocks-shim/releases/download/v0.7.0/rocks_shim-0.7.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+pip install https://github.com/eric-d-knowles/rocks-shim/releases/download/v0.8.0/rocks_shim-0.8.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 ```
 
 Or build from source (RocksDB, Snappy, LZ4 and ZSTD are downloaded and built
@@ -44,7 +44,7 @@ pip install .
 
 ### Releasing
 
-Publish a GitHub release with a version tag (e.g. `v0.7.0`, matching
+Publish a GitHub release with a version tag (e.g. `v0.8.0`, matching
 `pyproject.toml`). The `wheels` workflow builds the manylinux wheels with
 [cibuildwheel](https://cibuildwheel.pypa.io) inside the official manylinux
 container, runs `tests/` against each wheel, and attaches them to the
@@ -131,25 +131,25 @@ batch.Commit()
 ### SST File Writing
 
 ```python
-# Create SST files directly for bulk ingestion
-writer = rs.SstFileWriter.Create()
-writer.Open("/path/to/file.sst")
+# Create SST files directly for bulk ingestion; data blocks can be compressed
+writer = rs.SstFileWriter(compression="zstd")   # "none" (default), "lz4", "zstd"
+writer.open("/path/to/file.sst")
 
-# Add keys in sorted order
-writer.Put("key1", "value1")
-writer.Put("key2", "value2")
-writer.Put("key3", "value3")
+# Add keys in sorted order: puts, or merge operands that the database's
+# merge operator sums with each other and with existing data at compaction
+writer.put(b"key1", b"value1")
+writer.merge(b"key2", packed24_record)
 
-writer.Finish()
-file_size = writer.FileSize()
+writer.finish()
+file_size = writer.file_size()
 
-# Ingest into database
-db.IngestExternalFiles(
-    ["/path/to/file.sst"],
-    move=True,              # Move file instead of copy
-    write_global_seqno=True # Assign sequence numbers
-)
+# Ingest into database (a metadata operation: no memtable writes)
+db.ingest(["/path/to/file.sst"], move=True)
 ```
+
+Many workers can each write sorted files covering overlapping key ranges;
+ingested files land in level 0 and one `compact_all()` sorts and merges
+them into the bottom level.
 
 ## Profiles
 
@@ -278,7 +278,7 @@ If you use rocks-shim in your research, please cite it:
   title = {rocks-shim: Python bindings for RocksDB with optimized performance},
   year = {2024},
   url = {https://github.com/eric-d-knowles/rocks-shim},
-  version = {0.7.0}
+  version = {0.8.0}
 }
 ```
 

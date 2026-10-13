@@ -158,6 +158,40 @@ def test_scan_profile_reads_a_database_written_by_the_write_profile():
             db.close()
 
 
+def test_sst_merge_entries_are_summed_after_ingest():
+    """The pivot stage writes merge operands into SST files from many workers;
+    ingested into a packed24 database they must sum with each other and with
+    what the database already holds, and compressed files must ingest too."""
+    with tempfile.TemporaryDirectory() as d:
+        db = rs.open(str(pathlib.Path(d) / "db"), mode="rw", profile="write:packed24", create_if_missing=True)
+        try:
+            with db.write_batch(disable_wal=True) as wb:
+                wb.merge(b"cat", _packed((1990, 1, 1)))
+            db.finalize_bulk()
+            paths = []
+            for i, comp in enumerate(("zstd", "lz4", "none")):
+                w = rs.SstFileWriter(compression=comp)
+                p = str(pathlib.Path(d) / f"part{i}.sst")
+                w.open(p)
+                w.merge(b"cat", _packed((1990, 10, 1)))
+                w.merge(b"dog", _packed((2000, 1, 1)))
+                w.finish()
+                paths.append(p)
+            for p in paths:
+                db.ingest([p], move=True)
+            db.compact_all()
+            assert _unpack(db.get(b"cat")) == [(1990, 31, 4)]
+            assert _unpack(db.get(b"dog")) == [(2000, 3, 3)]
+        finally:
+            db.close()
+    try:
+        rs.SstFileWriter(compression="gzip")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("unknown compression must be rejected")
+
+
 if __name__ == "__main__":
     test_put_get_iterate()
     test_packed24_merge_and_merge_batch()
@@ -165,5 +199,6 @@ if __name__ == "__main__":
     test_bottommost_level_is_zstd_compressed()
     test_live_files_describe_the_key_space()
     test_scan_profile_reads_a_database_written_by_the_write_profile()
+    test_sst_merge_entries_are_summed_after_ingest()
     print("ok")
     sys.exit(0)
