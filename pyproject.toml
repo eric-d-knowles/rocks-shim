@@ -7,7 +7,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "rocks-shim"
-version = "0.6.0"
+version = "0.7.0"
 description = "Python bindings for RocksDB with the library linked in"
 requires-python = ">=3.9"
 license = {text = "Apache-2.0"}

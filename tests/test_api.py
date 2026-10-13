@@ -128,11 +128,42 @@ def test_live_files_describe_the_key_space():
             db.close()
 
 
+def test_scan_profile_reads_a_database_written_by_the_write_profile():
+    """The scan profile is for one-pass reads: it must open a database the
+    write profile produced (packed24 merges included), iterate a range, and
+    report its live files; and it must not reserve the serving profile's
+    4 GiB block cache."""
+    with tempfile.TemporaryDirectory() as d:
+        path = str(pathlib.Path(d) / "db")
+        db = rs.open(path, mode="rw", profile="write:packed24", create_if_missing=True)
+        with db.write_batch(disable_wal=True) as wb:
+            for i in range(20000):
+                wb.merge(f"key{i:08d}".encode(), _packed((1990, 1, 1)))
+                wb.merge(f"key{i:08d}".encode(), _packed((1990, 2, 1), (2000, 1, 1)))
+        db.finalize_bulk(); db.compact_all(); db.close()
+
+        db = rs.open(path, mode="r", profile="scan:packed24")
+        try:
+            it = db.iterator(fill_cache=False, readahead_size=2 << 20)
+            it.seek(b"key00010000")
+            n = 0
+            while it.valid() and it.key() < b"key00010100":
+                n += 1; it.next()
+            assert n == 100
+            assert _unpack(db.get(b"key00000042")) == [(1990, 3, 2), (2000, 1, 1)]
+            assert db.live_files()
+            cap = db.get_property("rocksdb.block-cache-capacity")
+            assert cap is not None and int(cap) <= 64 << 20
+        finally:
+            db.close()
+
+
 if __name__ == "__main__":
     test_put_get_iterate()
     test_packed24_merge_and_merge_batch()
     test_close_with_live_iterator_and_batch()
     test_bottommost_level_is_zstd_compressed()
     test_live_files_describe_the_key_space()
+    test_scan_profile_reads_a_database_written_by_the_write_profile()
     print("ok")
     sys.exit(0)

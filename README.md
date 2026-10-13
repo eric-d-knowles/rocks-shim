@@ -21,7 +21,7 @@ Wheels for Linux x86_64 (Python 3.11-3.13) are attached to each
 the one for your Python version, e.g.
 
 ```bash
-pip install https://github.com/eric-d-knowles/rocks-shim/releases/download/v0.6.0/rocks_shim-0.6.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+pip install https://github.com/eric-d-knowles/rocks-shim/releases/download/v0.7.0/rocks_shim-0.7.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 ```
 
 Or build from source (RocksDB, Snappy, LZ4 and ZSTD are downloaded and built
@@ -44,7 +44,7 @@ pip install .
 
 ### Releasing
 
-Publish a GitHub release with a version tag (e.g. `v0.6.0`, matching
+Publish a GitHub release with a version tag (e.g. `v0.7.0`, matching
 `pyproject.toml`). The `wheels` workflow builds the manylinux wheels with
 [cibuildwheel](https://cibuildwheel.pypa.io) inside the official manylinux
 container, runs `tests/` against each wheel, and attaches them to the
@@ -63,7 +63,7 @@ import rocks_shim as rs
 db = rs.DB.Open(rs.OpenArgs(
     path="/path/to/db",
     create_if_missing=True,
-    profile="write"  # "write" or "read"
+    profile="write"  # "write", "read" or "scan"
 ))
 
 # Put/Get
@@ -160,9 +160,15 @@ database's life:
   written uncompressed, no Bloom filters. Call `finalize_bulk()` and then
   `compact_all()` when the load is complete: the compaction writes the
   bottommost level with ZSTD (level 3).
-- **`read`** - serving lookups and scans. Direct I/O, partitioned Bloom
-  filters and two-level indexes, LZ4 on the middle levels and ZSTD at the
-  bottom, 4 GiB block cache.
+- **`read`** - serving lookups for a long-lived process. Every file is
+  opened at start with its index and filter pinned, direct I/O, partitioned
+  Bloom filters, 4 GiB block cache. Memory grows with the size of the
+  database.
+- **`scan`** - one pass over a key range, then close: a worker that filters
+  its share of a database, a frequency count, a partitioning step. Only the
+  files the scan touches are kept open (`max_open_files` 256), nothing is
+  pinned, 64 MiB block cache; open the iterator with `fill_cache=False` and
+  a `readahead_size`. About 200 MB per process whatever the database's size.
 
 Both accept a `:packed24` suffix (`write:packed24`) that installs the
 `packed24` merge operator described below.
@@ -272,7 +278,7 @@ If you use rocks-shim in your research, please cite it:
   title = {rocks-shim: Python bindings for RocksDB with optimized performance},
   year = {2024},
   url = {https://github.com/eric-d-knowles/rocks-shim},
-  version = {0.6.0}
+  version = {0.7.0}
 }
 ```
 
