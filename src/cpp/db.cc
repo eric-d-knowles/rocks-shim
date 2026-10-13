@@ -112,8 +112,8 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
   const std::string msuf = merge_suffix(a.profile);
 
   // Validate base profile first
-  if (base != "read" && base != "write") {
-    throw std::invalid_argument("Unknown profile: '" + a.profile + "'. Valid profiles: read, write");
+  if (base != "read" && base != "write" && base != "scan") {
+    throw std::invalid_argument("Unknown profile: '" + a.profile + "'. Valid profiles: read, write, scan");
   }
 
   // Merge operator by profile suffix
@@ -204,6 +204,43 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
     // -------- Housekeeping / observability
     o.stats_dump_period_sec = 60;
     o.skip_stats_update_on_db_open = false;
+
+  } else if (base == "scan") {
+    // -------- One pass over a key range, then close: a filter worker, a
+    // whitelist count, a partitioning step. Memory must not scale with the
+    // size of the database, so the table cache is bounded (only the files
+    // the scan touches stay open; `read` opens every file and pins its
+    // index and filter), nothing is pinned, and the block cache is small:
+    // scans open their iterators with fill_cache=false and readahead.
+    o.max_open_files = 256;
+    o.max_file_opening_threads = 4;
+    o.allow_mmap_reads = false;
+    o.use_direct_reads = false;                       // buffered reads + readahead suit a sequential pass
+    o.compaction_readahead_size = 0;
+    o.max_background_jobs = 2;                        // nothing to compact: the handle is read-only
+    o.skip_stats_update_on_db_open = true;            // no stats scan over thousands of files at open
+    o.compression = rocksdb::kLZ4Compression;         // irrelevant for a read-only handle; keep valid
+    o.bottommost_compression = rocksdb::kZSTD;
+
+    rocksdb::BlockBasedTableOptions bbt;
+    bbt.format_version = 5;
+    bbt.index_type = rocksdb::BlockBasedTableOptions::kTwoLevelIndexSearch;
+    bbt.partition_filters = true;
+    bbt.cache_index_and_filter_blocks = true;         // index/filter go through the (small) cache
+    bbt.cache_index_and_filter_blocks_with_high_priority = true;
+    bbt.pin_top_level_index_and_filter = false;
+    bbt.pin_l0_filter_and_index_blocks_in_cache = false;
+    bbt.block_size = 16 * 1024;
+    bbt.checksum = rocksdb::kXXH3;
+    {
+      rocksdb::LRUCacheOptions cache_opts;
+      cache_opts.capacity = 64ull << 20;              // 64 MiB: index/filter partitions of the files in flight
+      cache_opts.num_shard_bits = 4;
+      cache_opts.strict_capacity_limit = false;
+      cache_opts.high_pri_pool_ratio = 0.5;
+      bbt.block_cache = rocksdb::NewLRUCache(cache_opts);
+    }
+    o.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbt));
 
   } else if (base == "write") {
     // -------- I/O (bulk ingest posture)
