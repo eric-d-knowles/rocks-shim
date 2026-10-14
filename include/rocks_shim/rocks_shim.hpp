@@ -99,4 +99,13 @@ public:
   virtual uint64_t FileSize() = 0;
 };
 
+// Merge sorted SST files of merge operands into one sorted SST file of merge
+// operands. Entries with the same key across the parts are combined with the
+// packed24 operator (merge_operator "packed24"); with "none" a key must occur
+// in one part only. Every output entry is a Merge entry. Returns the number of
+// entries written. The parts are left in place.
+uint64_t MergeSstFiles(const std::vector<std::string>& parts, const std::string& out,
+                       const std::string& compression = "zstd", int compression_level = 3,
+                       const std::string& merge_operator = "packed24");
+
 } // namespace rshim

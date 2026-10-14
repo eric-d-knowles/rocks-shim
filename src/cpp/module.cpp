@@ -173,6 +173,18 @@ PYBIND11_MODULE(rocks_shim, m) {
     py::arg("path"), py::kw_only(), py::arg("mode")="rw",
     py::arg("create_if_missing")=false, py::arg("profile") = "");
 
+  m.def("merge_sst_files",
+    [](const std::vector<std::string>& parts, const std::string& out, const std::string& compression,
+       int compression_level, const std::string& merge_operator) {
+      py::gil_scoped_release release;
+      return rs::MergeSstFiles(parts, out, compression, compression_level, merge_operator);
+    },
+    py::arg("parts"), py::arg("out"), py::kw_only(), py::arg("compression") = "zstd",
+    py::arg("compression_level") = 3, py::arg("merge_operator") = "packed24",
+    "Merge sorted SST files of merge operands into one sorted SST file. Keys present in "
+    "several parts are combined with the packed24 operator (or rejected with "
+    "merge_operator='none'). Returns the number of entries written; the parts are left in place.");
+
   // --- SstFileWriter Bindings ---
   py::class_<rs::SstFileWriter, std::shared_ptr<rs::SstFileWriter>>(m, "SstFileWriter")
     .def(py::init([](const std::string& compression, int compression_level) {

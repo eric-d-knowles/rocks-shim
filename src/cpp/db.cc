@@ -11,6 +11,8 @@
 #include <rocksdb/table.h>
 #include <rocksdb/utilities/options_util.h>
 #include <rocksdb/sst_file_writer.h>
+#include <rocksdb/sst_file_reader.h>
+#include <queue>
 
 #include <memory>
 #include <optional>
@@ -269,6 +271,9 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
     o.max_background_compactions = 28;                // harmless while disabled; useful if you flip later
     o.max_background_flushes = 8;
     o.max_subcompactions = 28;
+    // Each subcompaction holds a read-ahead buffer per input file; with many
+    // level-0 inputs RocksDB's 2 MiB default is the largest thing in memory.
+    o.compaction_readahead_size = 256 * 1024;
 
     // -------- LSM posture for bulk ingest (let L0 grow without stalling)
     o.compaction_pri = rocksdb::kByCompensatedSize;
@@ -481,6 +486,33 @@ struct DbImpl : public DB {
   }
 };
 
+// Options for an SST file written outside a database (SstFileWriter and
+// MergeSstFiles). The table layout is what matters: these files are read as
+// level-0 inputs of one big compaction, where every input file is open at
+// once, so each must cost little memory. 64 KiB blocks and a partitioned
+// index keep the per-file index to a few kilobytes resident; the compacted
+// database is rewritten with the write profile's own layout anyway.
+static rocksdb::Options sst_file_options(const std::string& compression, int level) {
+  rocksdb::Options options;
+  if (compression == "none") {
+    options.compression = rocksdb::kNoCompression;
+  } else if (compression == "lz4") {
+    options.compression = rocksdb::kLZ4Compression;
+  } else if (compression == "zstd") {
+    options.compression = rocksdb::kZSTD;
+    options.compression_opts.level = level;
+  } else {
+    throw std::invalid_argument("Unknown compression: '" + compression + "'. Valid: none, lz4, zstd");
+  }
+  rocksdb::BlockBasedTableOptions bbt;
+  bbt.format_version = 5;
+  bbt.block_size = 64 * 1024;
+  bbt.index_type = rocksdb::BlockBasedTableOptions::kTwoLevelIndexSearch;
+  bbt.checksum = rocksdb::kXXH3;
+  options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbt));
+  return options;
+}
+
 // ---------------- SstFileWriter impl ----------------
 struct SstFileWriterImpl : public SstFileWriter {
   std::unique_ptr<rocksdb::SstFileWriter> writer;
@@ -488,18 +520,7 @@ struct SstFileWriterImpl : public SstFileWriter {
   rocksdb::EnvOptions env_options;
 
   SstFileWriterImpl(const std::string& compression, int level) {
-    // Default options (compatible with any DB) plus the requested compression.
-    options = rocksdb::Options();
-    if (compression == "none") {
-      options.compression = rocksdb::kNoCompression;
-    } else if (compression == "lz4") {
-      options.compression = rocksdb::kLZ4Compression;
-    } else if (compression == "zstd") {
-      options.compression = rocksdb::kZSTD;
-      options.compression_opts.level = level;
-    } else {
-      throw std::invalid_argument("Unknown compression: '" + compression + "'. Valid: none, lz4, zstd");
-    }
+    options = sst_file_options(compression, level);
     env_options = rocksdb::EnvOptions();
     writer = std::make_unique<rocksdb::SstFileWriter>(env_options, options);
   }
@@ -546,6 +567,75 @@ std::shared_ptr<DB> DB::Open(const OpenArgs& args) {
 
 std::shared_ptr<SstFileWriter> SstFileWriter::Create(const std::string& compression, int compression_level) {
   return std::make_shared<SstFileWriterImpl>(compression, compression_level);
+}
+
+uint64_t MergeSstFiles(const std::vector<std::string>& parts, const std::string& out,
+                       const std::string& compression, int compression_level,
+                       const std::string& merge_operator) {
+  const bool packed24 = merge_operator == "packed24";
+  if (!packed24 && merge_operator != "none") {
+    throw std::invalid_argument("Unknown merge_operator: '" + merge_operator + "'. Valid: packed24, none");
+  }
+  // Each part is read through RocksDB's own reader. With the operator set the
+  // reader resolves a key's operands within one part to a single value, so
+  // what the merge sees is one entry per key per part.
+  rocksdb::Options ropts;
+  if (packed24) ropts.merge_operator.reset(new rshim::Packed24Merge());
+  std::vector<std::unique_ptr<rocksdb::SstFileReader>> readers;
+  std::vector<std::unique_ptr<rocksdb::Iterator>> its;
+  readers.reserve(parts.size()); its.reserve(parts.size());
+  rocksdb::ReadOptions read_opts;
+  read_opts.fill_cache = false;
+  read_opts.readahead_size = 256 * 1024;
+  for (const auto& path : parts) {
+    auto r = std::make_unique<rocksdb::SstFileReader>(ropts);
+    auto st = r->Open(path);
+    if (!st.ok()) throw std::runtime_error("open " + path + ": " + st.ToString());
+    std::unique_ptr<rocksdb::Iterator> it(r->NewIterator(read_opts));
+    it->SeekToFirst();
+    if (!it->status().ok()) throw std::runtime_error("read " + path + ": " + it->status().ToString());
+    readers.push_back(std::move(r));
+    its.push_back(std::move(it));
+  }
+  // Min-heap of the parts positioned on their current key.
+  auto greater = [&its](size_t a, size_t b) { return its[a]->key().compare(its[b]->key()) > 0; };
+  std::priority_queue<size_t, std::vector<size_t>, decltype(greater)> heap(greater);
+  for (size_t i = 0; i < its.size(); ++i) if (its[i]->Valid()) heap.push(i);
+
+  rocksdb::EnvOptions env_options;
+  rocksdb::SstFileWriter writer(env_options, sst_file_options(compression, compression_level));
+  auto st = writer.Open(out);
+  if (!st.ok()) throw std::runtime_error("open " + out + ": " + st.ToString());
+
+  uint64_t written = 0;
+  std::string key, value, combined;
+  std::vector<size_t> used;
+  while (!heap.empty()) {
+    size_t i = heap.top(); heap.pop();
+    key.assign(its[i]->key().data(), its[i]->key().size());
+    value.assign(its[i]->value().data(), its[i]->value().size());
+    used.clear(); used.push_back(i);
+    while (!heap.empty() && its[heap.top()]->key().compare(key) == 0) {
+      size_t j = heap.top(); heap.pop();
+      if (!packed24) throw std::runtime_error("key present in more than one part with merge_operator 'none'");
+      const auto& v = its[j]->value();
+      detail::merge_packed24_unchecked(reinterpret_cast<const unsigned char*>(value.data()), value.size(),
+                                       reinterpret_cast<const unsigned char*>(v.data()), v.size(), &combined);
+      value.swap(combined);
+      used.push_back(j);
+    }
+    st = writer.Merge(key, value);
+    if (!st.ok()) throw std::runtime_error("write " + out + ": " + st.ToString());
+    ++written;
+    for (size_t j : used) {
+      its[j]->Next();
+      if (!its[j]->status().ok()) throw std::runtime_error("read " + parts[j] + ": " + its[j]->status().ToString());
+      if (its[j]->Valid()) heap.push(j);
+    }
+  }
+  st = writer.Finish();
+  if (!st.ok()) throw std::runtime_error("finish " + out + ": " + st.ToString());
+  return written;
 }
 
 } // namespace rshim

@@ -21,7 +21,7 @@ Wheels for Linux x86_64 (Python 3.11-3.13) are attached to each
 the one for your Python version, e.g.
 
 ```bash
-pip install https://github.com/eric-d-knowles/rocks-shim/releases/download/v0.8.0/rocks_shim-0.8.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+pip install https://github.com/eric-d-knowles/rocks-shim/releases/download/v0.9.0/rocks_shim-0.9.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 ```
 
 Or build from source (RocksDB, Snappy, LZ4 and ZSTD are downloaded and built
@@ -44,7 +44,7 @@ pip install .
 
 ### Releasing
 
-Publish a GitHub release with a version tag (e.g. `v0.8.0`, matching
+Publish a GitHub release with a version tag (e.g. `v0.9.0`, matching
 `pyproject.toml`). The `wheels` workflow builds the manylinux wheels with
 [cibuildwheel](https://cibuildwheel.pypa.io) inside the official manylinux
 container, runs `tests/` against each wheel, and attaches them to the
@@ -149,7 +149,20 @@ db.ingest(["/path/to/file.sst"], move=True)
 
 Many workers can each write sorted files covering overlapping key ranges;
 ingested files land in level 0 and one `compact_all()` sorts and merges
-them into the bottom level.
+them into the bottom level. Keep the number of ingested files in the
+hundreds, not the tens of thousands: that compaction holds every level-0
+file open at once. A worker that spills many small sorted files should
+merge them into one before handing it over:
+
+```python
+# Sorted parts, possibly sharing keys: one sorted file, shared keys summed
+# with the packed24 operator (merge_operator="none" to forbid shared keys).
+n = rs.merge_sst_files(["part0.sst", "part1.sst", ...], "unit.sst", compression="zstd")
+```
+
+The parts are left in place for the caller to delete. Files written by
+`SstFileWriter` and `merge_sst_files` use 64 KiB blocks and a partitioned
+index, so each costs little memory as a compaction input.
 
 ## Profiles
 
@@ -278,7 +291,7 @@ If you use rocks-shim in your research, please cite it:
   title = {rocks-shim: Python bindings for RocksDB with optimized performance},
   year = {2024},
   url = {https://github.com/eric-d-knowles/rocks-shim},
-  version = {0.8.0}
+  version = {0.9.0}
 }
 ```
 
