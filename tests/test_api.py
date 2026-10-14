@@ -192,6 +192,46 @@ def test_sst_merge_entries_are_summed_after_ingest():
         raise AssertionError("unknown compression must be rejected")
 
 
+def test_merge_sst_files_combines_parts_into_one_file():
+    """Workers spill many small sorted files of merge operands; merging them
+    into one file per worker keeps the number of level-0 files small enough
+    for the final compaction. Keys shared by parts must be summed."""
+    with tempfile.TemporaryDirectory() as d:
+        parts = []
+        for i, rows in enumerate(([(b"ant", [(1990, 1, 1)]), (b"cat", [(1990, 2, 1), (2000, 1, 1)])],
+                                  [(b"cat", [(1990, 3, 1)]), (b"dog", [(1995, 1, 1)])],
+                                  [(b"cat", [(1980, 1, 1)]), (b"zebra", [(2000, 1, 1)])])):
+            w = rs.SstFileWriter(compression="lz4")
+            p = str(pathlib.Path(d) / f"part{i}.sst")
+            w.open(p)
+            for k, triples in rows:
+                w.merge(k, _packed(*triples))
+            w.finish()
+            parts.append(p)
+        out = str(pathlib.Path(d) / "unit.sst")
+        n = rs.merge_sst_files(parts, out, compression="zstd")
+        assert n == 4                                               # ant, cat, dog, zebra
+        assert all(pathlib.Path(p).exists() for p in parts)         # parts are left to the caller
+        db = rs.open(str(pathlib.Path(d) / "db"), mode="rw", profile="write:packed24", create_if_missing=True)
+        try:
+            with db.write_batch(disable_wal=True) as wb:
+                wb.merge(b"cat", _packed((1990, 10, 10)))           # what the database already holds
+            db.finalize_bulk()
+            db.ingest([out], move=True)
+            db.compact_all()
+            assert _unpack(db.get(b"cat")) == [(1980, 1, 1), (1990, 15, 12), (2000, 1, 1)]
+            assert _unpack(db.get(b"ant")) == [(1990, 1, 1)] and _unpack(db.get(b"zebra")) == [(2000, 1, 1)]
+            assert int(db.get_property("rocksdb.estimate-num-keys")) == 4
+        finally:
+            db.close()
+        try:
+            rs.merge_sst_files(parts, str(pathlib.Path(d) / "x.sst"), merge_operator="none")
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("a key in several parts must be rejected without an operator")
+
+
 if __name__ == "__main__":
     test_put_get_iterate()
     test_packed24_merge_and_merge_batch()
@@ -200,5 +240,6 @@ if __name__ == "__main__":
     test_live_files_describe_the_key_space()
     test_scan_profile_reads_a_database_written_by_the_write_profile()
     test_sst_merge_entries_are_summed_after_ingest()
+    test_merge_sst_files_combines_parts_into_one_file()
     print("ok")
     sys.exit(0)
