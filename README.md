@@ -21,7 +21,7 @@ Wheels for Linux x86_64 (Python 3.11-3.13) are attached to each
 the one for your Python version, e.g.
 
 ```bash
-pip install https://github.com/eric-d-knowles/rocks-shim/releases/download/v0.10.0/rocks_shim-0.10.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+pip install https://github.com/eric-d-knowles/rocks-shim/releases/download/v0.10.1/rocks_shim-0.10.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 ```
 
 Or build from source (RocksDB, Snappy, LZ4 and ZSTD are downloaded and built
@@ -46,7 +46,7 @@ pip install .
 
 Set the version in `pyproject.toml`, in `CITATION.cff` (with `date-released`)
 and in this README's install line and citation, then publish a GitHub
-release with the matching tag (e.g. `v0.10.0`). The `wheels` workflow builds the manylinux wheels with
+release with the matching tag (e.g. `v0.10.1`). The `wheels` workflow builds the manylinux wheels with
 [cibuildwheel](https://cibuildwheel.pypa.io) inside the official manylinux
 container, runs `tests/` against each wheel, and attaches them to the
 release. "Run workflow" on the Actions tab builds them as an artifact
@@ -322,7 +322,7 @@ If you use rocks-shim in your research, please cite it:
   title = {rocks-shim: Python bindings for RocksDB with optimized performance},
   year = {2026},
   url = {https://github.com/eric-d-knowles/rocks-shim},
-  version = {0.10.0}
+  version = {0.10.1}
 }
 ```
 
