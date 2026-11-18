@@ -44,8 +44,9 @@ pip install .
 
 ### Releasing
 
-Publish a GitHub release with a version tag (e.g. `v0.10.0`, matching
-`pyproject.toml`). The `wheels` workflow builds the manylinux wheels with
+Set the version in `pyproject.toml`, in `CITATION.cff` (with `date-released`)
+and in this README's install line and citation, then publish a GitHub
+release with the matching tag (e.g. `v0.10.0`). The `wheels` workflow builds the manylinux wheels with
 [cibuildwheel](https://cibuildwheel.pypa.io) inside the official manylinux
 container, runs `tests/` against each wheel, and attaches them to the
 release. "Run workflow" on the Actions tab builds them as an artifact
@@ -316,10 +317,10 @@ RocksDB 10.5.1, Snappy 1.1.10, LZ4 1.9.4 and ZSTD 1.5.6 are built from source an
 If you use rocks-shim in your research, please cite it:
 
 ```bibtex
-@software{knowles2024rocksshim,
+@software{knowles2026rocksshim,
   author = {Knowles, Eric D.},
   title = {rocks-shim: Python bindings for RocksDB with optimized performance},
-  year = {2024},
+  year = {2026},
   url = {https://github.com/eric-d-knowles/rocks-shim},
   version = {0.10.0}
 }

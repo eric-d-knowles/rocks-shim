@@ -4,8 +4,8 @@ authors:
   - family-names: "Knowles"
     given-names: "Eric D."
 title: "rocks-shim: Python bindings for RocksDB with optimized performance"
-version: 0.3.0
-date-released: 2024-11-01
+version: 0.10.0
+date-released: 2026-11-17
 url: "https://github.com/eric-d-knowles/rocks-shim"
 repository-code: "https://github.com/eric-d-knowles/rocks-shim"
 license: MIT
