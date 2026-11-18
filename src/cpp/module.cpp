@@ -79,17 +79,20 @@ PYBIND11_MODULE(rocks_shim, m) {
   // --- DB Bindings ---
   py::class_<rs::DB, std::shared_ptr<rs::DB>>(m, "DB")
     .def_static("open",
-      [](const std::string& path, bool read_only, bool create_if_missing, const std::string& profile){
+      [](const std::string& path, bool read_only, bool create_if_missing, const std::string& profile,
+         const std::string& merge_operator){
         rs::OpenArgs a;
         a.path = path;
         a.read_only = read_only;
         a.create_if_missing = create_if_missing;
         a.profile = profile.empty() ? (read_only ? "read" : "write") : profile;
+        a.merge_operator = merge_operator;
 
         py::gil_scoped_release release;
         return rs::DB::Open(a);
       },
-      py::arg("path"), py::kw_only(), py::arg("read_only")=false, py::arg("create_if_missing")=false, py::arg("profile") = "")
+      py::arg("path"), py::kw_only(), py::arg("read_only")=false, py::arg("create_if_missing")=false,
+      py::arg("profile") = "", py::arg("merge_operator") = "")
     .def("__enter__", [](std::shared_ptr<rs::DB> self){ return self; })
     .def("__exit__",  [](rs::DB& self, py::object, py::object, py::object){ self.Close(); return false; })
     .def("close", &rs::DB::Close, py::call_guard<py::gil_scoped_release>())
@@ -160,30 +163,40 @@ PYBIND11_MODULE(rocks_shim, m) {
 
   // Module-level open function for api.py compatibility
   m.def("open",
-    [](const std::string& path, const std::string& mode, bool create_if_missing, const std::string& profile){
+    [](const std::string& path, const std::string& mode, bool create_if_missing, const std::string& profile,
+       const std::string& merge_operator){
       rs::OpenArgs a;
       a.path = path;
       a.read_only = (mode == "r");
       a.create_if_missing = create_if_missing;
       a.profile = profile.empty() ? (a.read_only ? "read" : "write") : profile;
+      a.merge_operator = merge_operator;
 
       py::gil_scoped_release release;
       return rs::DB::Open(a);
     },
     py::arg("path"), py::kw_only(), py::arg("mode")="rw",
-    py::arg("create_if_missing")=false, py::arg("profile") = "");
+    py::arg("create_if_missing")=false, py::arg("profile") = "", py::arg("merge_operator") = "",
+    "Open a database. profile: 'read', 'write' or 'scan'. merge_operator: one of merge_operators(), "
+    "or '' for none; it may also be given as a suffix of the profile ('write:packed24').");
+
+  m.def("merge_operators", &rs::MergeOperatorNames,
+    "Names of the merge operators that can be given to open() and merge_sst_files(): 'packed24' "
+    "(values are sorted runs of 24-byte records, summed where their keys match) and RocksDB's own "
+    "'uint64add', 'stringappend', 'max' and 'put'.");
 
   m.def("merge_sst_files",
-    [](const std::vector<std::string>& parts, const std::string& out, const std::string& compression,
-       int compression_level, const std::string& merge_operator) {
+    [](const std::vector<std::string>& parts, const std::string& out, const std::string& merge_operator,
+       const std::string& compression, int compression_level) {
       py::gil_scoped_release release;
-      return rs::MergeSstFiles(parts, out, compression, compression_level, merge_operator);
+      return rs::MergeSstFiles(parts, out, merge_operator, compression, compression_level);
     },
-    py::arg("parts"), py::arg("out"), py::kw_only(), py::arg("compression") = "zstd",
-    py::arg("compression_level") = 3, py::arg("merge_operator") = "packed24",
+    py::arg("parts"), py::arg("out"), py::kw_only(), py::arg("merge_operator"),
+    py::arg("compression") = "zstd", py::arg("compression_level") = 3,
     "Merge sorted SST files of merge operands into one sorted SST file. Keys present in "
-    "several parts are combined with the packed24 operator (or rejected with "
-    "merge_operator='none'). Returns the number of entries written; the parts are left in place.");
+    "several parts are combined with the named merge operator (one of merge_operators()), "
+    "earlier parts first. merge_operator is required: it must be the operator the parts were "
+    "written for. Returns the number of entries written; the parts are left in place.");
 
   // --- SstFileWriter Bindings ---
   py::class_<rs::SstFileWriter, std::shared_ptr<rs::SstFileWriter>>(m, "SstFileWriter")

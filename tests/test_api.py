@@ -209,7 +209,7 @@ def test_merge_sst_files_combines_parts_into_one_file():
             w.finish()
             parts.append(p)
         out = str(pathlib.Path(d) / "unit.sst")
-        n = rs.merge_sst_files(parts, out, compression="zstd")
+        n = rs.merge_sst_files(parts, out, compression="zstd", merge_operator="packed24")
         assert n == 4                                               # ant, cat, dog, zebra
         assert all(pathlib.Path(p).exists() for p in parts)         # parts are left to the caller
         db = rs.open(str(pathlib.Path(d) / "db"), mode="rw", profile="write:packed24", create_if_missing=True)
@@ -232,6 +232,130 @@ def test_merge_sst_files_combines_parts_into_one_file():
             raise AssertionError("a key in several parts must be rejected without an operator")
 
 
+def _open(d, name="db", **kw):
+    return rs.open(str(pathlib.Path(d) / name), mode="rw", create_if_missing=True, **kw)
+
+
+def _raises(kind, fn):
+    try:
+        fn()
+    except kind as exc:
+        return str(exc)
+    raise AssertionError(f"expected {kind.__name__}")
+
+
+def test_merge_operator_is_named_on_its_own_or_as_the_profile_suffix():
+    assert rs.merge_operators() == ["packed24", "uint64add", "stringappend", "max", "put"]
+    with tempfile.TemporaryDirectory() as d:
+        # the argument and the suffix install the same operator
+        for i, kw in enumerate([dict(profile="write", merge_operator="packed24"), dict(profile="write:packed24"),
+                                dict(profile="write:packed24", merge_operator="packed24"),
+                                dict(merge_operator="packed24")]):
+            db = _open(d, f"db{i}", **kw)
+            try:
+                db.merge(b"cat", _packed((1990, 1, 1)))
+                db.merge(b"cat", _packed((1990, 5, 1), (2000, 2, 2)))
+                assert _unpack(db.get(b"cat")) == [(1990, 6, 2), (2000, 2, 2)]
+            finally:
+                db.close()
+        # naming two different operators, or one that does not exist, is an error
+        assert "different merge operators" in _raises(
+            ValueError, lambda: _open(d, "x1", profile="write:packed24", merge_operator="uint64add"))
+        assert "Unknown merge operator: 'packed42'" in _raises(ValueError, lambda: _open(d, "x2", profile="write:packed42"))
+        assert "Valid: packed24, uint64add" in _raises(ValueError, lambda: _open(d, "x3", merge_operator="sum"))
+        # "none" and "" mean no operator
+        db = _open(d, "plain", profile="write", merge_operator="none")
+        db.put(b"k", b"v")
+        assert db.get(b"k") == b"v"
+        db.close()
+
+
+def test_rocksdb_stock_operators():
+    with tempfile.TemporaryDirectory() as d:
+        cases = {
+            "uint64add": ([struct.pack("<Q", 5), struct.pack("<Q", 7), struct.pack("<Q", 30)], struct.pack("<Q", 42)),
+            "stringappend": ([b"a", b"b", b"c"], b"a,b,c"),
+            "max": ([b"pear", b"apple", b"plum"], b"plum"),
+            "put": ([b"first", b"second", b"last"], b"last"),
+        }
+        for name, (operands, expected) in cases.items():
+            db = _open(d, name, profile="write", merge_operator=name)
+            try:
+                for v in operands:
+                    db.merge(b"k", v)
+                assert db.get(b"k") == expected, (name, db.get(b"k"))
+                db.finalize_bulk()
+                db.compact_all()
+                assert db.get(b"k") == expected, (name, "after compaction", db.get(b"k"))
+            finally:
+                db.close()
+
+
+def test_packed24_refuses_a_value_that_is_not_whole_records():
+    """The operator reads fixed 24-byte records. A value of another length
+    used to be read past its end in a release build; now the merge fails."""
+    with tempfile.TemporaryDirectory() as d:
+        db = _open(d, profile="write:packed24")
+        try:
+            db.merge(b"good", _packed((1990, 1, 1)))
+            db.merge(b"bad", _packed((1990, 1, 1)))
+            db.merge(b"bad", b"x" * 23)
+            db.merge(b"alone", b"y" * 25)
+            assert _unpack(db.get(b"good")) == [(1990, 1, 1)]
+            _raises(RuntimeError, lambda: db.get(b"bad"))
+            _raises(RuntimeError, lambda: db.get(b"alone"))
+            db.merge(b"empty", b"")                       # an empty operand is whole records: none
+            db.merge(b"empty", _packed((2001, 3, 2)))
+            assert _unpack(db.get(b"empty")) == [(2001, 3, 2)]
+        finally:
+            db.close()
+
+
+def _write_sst(path, entries):
+    w = rs.SstFileWriter(compression="zstd")
+    w.open(str(path))
+    for k, v in entries:
+        w.merge(k, v)
+    w.finish()
+
+
+def test_merge_sst_files_uses_the_named_operator_and_keeps_the_order_of_the_parts():
+    with tempfile.TemporaryDirectory() as d:
+        d = pathlib.Path(d)
+        # counters
+        _write_sst(d / "a.sst", [(b"k1", struct.pack("<Q", 1)), (b"k2", struct.pack("<Q", 10))])
+        _write_sst(d / "b.sst", [(b"k2", struct.pack("<Q", 5)), (b"k3", struct.pack("<Q", 7))])
+        n = rs.merge_sst_files([str(d / "a.sst"), str(d / "b.sst")], str(d / "sum.sst"), merge_operator="uint64add")
+        assert n == 3
+        db = _open(d, "sum", profile="write", merge_operator="uint64add")
+        db.ingest([str(d / "sum.sst")])
+        assert [struct.unpack("<Q", db.get(k))[0] for k in (b"k1", b"k2", b"k3")] == [1, 15, 7]
+        db.close()
+        # an operator for which order matters sees the parts in the order given
+        for i, word in enumerate([b"one", b"two", b"three", b"four"]):
+            _write_sst(d / f"p{i}.sst", [(b"k", word), (f"only{i}".encode(), word)])
+        parts = [str(d / f"p{i}.sst") for i in range(4)]
+        for order, expected in ((parts, b"one,two,three,four"), (parts[::-1], b"four,three,two,one")):
+            out = d / f"joined{len(expected)}{order is parts}.sst"
+            assert rs.merge_sst_files(order, str(out), merge_operator="stringappend") == 5
+            db = _open(d, out.stem, profile="write", merge_operator="stringappend")
+            db.ingest([str(out)])
+            assert db.get(b"k") == expected, db.get(b"k")
+            db.close()
+        # unknown names are refused; without an operator parts of merge entries cannot be read at all
+        assert "Unknown merge operator" in _raises(
+            ValueError, lambda: rs.merge_sst_files(parts, str(d / "x.sst"), merge_operator="sum"))
+        assert "merge_operator" in _raises(
+            RuntimeError, lambda: rs.merge_sst_files(parts, str(d / "y.sst"), merge_operator="none"))
+        # packed24 refuses a part that holds a malformed value (the part's reader fails on it)
+        _write_sst(d / "m1.sst", [(b"k", _packed((1990, 1, 1)))])
+        _write_sst(d / "m2.sst", [(b"k", b"z" * 23)])
+        _raises(RuntimeError, lambda: rs.merge_sst_files([str(d / "m1.sst"), str(d / "m2.sst")], str(d / "z.sst"),
+                                                         merge_operator="packed24"))
+        # the operator has no default: only the caller knows what the parts hold
+        assert "merge_operator" in _raises(TypeError, lambda: rs.merge_sst_files(parts, str(d / "w.sst")))
+
+
 if __name__ == "__main__":
     test_put_get_iterate()
     test_packed24_merge_and_merge_batch()
@@ -241,5 +365,9 @@ if __name__ == "__main__":
     test_scan_profile_reads_a_database_written_by_the_write_profile()
     test_sst_merge_entries_are_summed_after_ingest()
     test_merge_sst_files_combines_parts_into_one_file()
+    test_merge_operator_is_named_on_its_own_or_as_the_profile_suffix()
+    test_rocksdb_stock_operators()
+    test_packed24_refuses_a_value_that_is_not_whole_records()
+    test_merge_sst_files_uses_the_named_operator_and_keeps_the_order_of_the_parts()
     print("ok")
     sys.exit(0)

@@ -77,14 +77,21 @@ inline void merge_packed24_unchecked(const unsigned char* pa, size_t asz,
 
 } // namespace detail
 
-// Associative & commutative operator.
+// Associative & commutative operator. Its Name() is stored with a database
+// and must not change.
 class Packed24Merge final : public rocksdb::AssociativeMergeOperator {
  public:
+  // A value that is not whole 24-byte records cannot be merged: the loop
+  // reads fixed-width records and would run past its end. Both functions
+  // refuse it (RocksDB then reports the merge as failed) in every build, at
+  // the cost of one comparison per value. That keys ascend within a value is
+  // the caller's to ensure: checking it would cost a pass over both values.
   bool Merge(const rocksdb::Slice& /*key*/,
              const rocksdb::Slice* existing_value,
              const rocksdb::Slice& value,
              std::string* new_value,
              rocksdb::Logger* /*logger*/) const override {
+    if ((value.size() % 24) != 0 || (existing_value && (existing_value->size() % 24) != 0)) return false;
     if (!existing_value || existing_value->size() == 0) {
       new_value->assign(value.data(), value.size());
       return true;
@@ -93,10 +100,6 @@ class Packed24Merge final : public rocksdb::AssociativeMergeOperator {
       new_value->assign(existing_value->data(), existing_value->size());
       return true;
     }
-#ifndef NDEBUG
-    // Debug guard only; compiled out in release.
-    if ((existing_value->size() % 24) != 0 || (value.size() % 24) != 0) return false;
-#endif
     detail::merge_packed24_unchecked(
         reinterpret_cast<const unsigned char*>(existing_value->data()), existing_value->size(),
         reinterpret_cast<const unsigned char*>(value.data()), value.size(),
@@ -109,11 +112,9 @@ class Packed24Merge final : public rocksdb::AssociativeMergeOperator {
                     const rocksdb::Slice& right_operand,
                     std::string* new_value,
                     rocksdb::Logger* /*logger*/) const override {
+    if ((left_operand.size() % 24) != 0 || (right_operand.size() % 24) != 0) return false;
     if (left_operand.size() == 0) { new_value->assign(right_operand.data(), right_operand.size()); return true; }
     if (right_operand.size() == 0){ new_value->assign(left_operand.data(), left_operand.size());  return true; }
-#ifndef NDEBUG
-    if ((left_operand.size() % 24) != 0 || (right_operand.size() % 24) != 0) return false;
-#endif
     detail::merge_packed24_unchecked(
         reinterpret_cast<const unsigned char*>(left_operand.data()), left_operand.size(),
         reinterpret_cast<const unsigned char*>(right_operand.data()), right_operand.size(),

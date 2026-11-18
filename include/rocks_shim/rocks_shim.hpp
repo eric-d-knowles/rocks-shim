@@ -14,7 +14,17 @@ struct OpenArgs {
   bool        read_only         = false;
   bool        create_if_missing = false;
   std::string profile = "write";
+  // Name of the merge operator to install ("" for none): see
+  // MergeOperatorNames(). The same name may be given as a suffix of the
+  // profile ("write:packed24"); giving both is an error unless they agree.
+  std::string merge_operator;
 };
+
+// The merge operators that can be named when opening a database and in
+// MergeSstFiles, in a fixed order: "packed24" (this library's: values are
+// sorted runs of 24-byte records, summed where their keys match) and
+// RocksDB's own "uint64add", "stringappend", "max" and "put".
+std::vector<std::string> MergeOperatorNames();
 
 class Iterator {
 public:
@@ -101,11 +111,12 @@ public:
 
 // Merge sorted SST files of merge operands into one sorted SST file of merge
 // operands. Entries with the same key across the parts are combined with the
-// packed24 operator (merge_operator "packed24"); with "none" a key must occur
-// in one part only. Every output entry is a Merge entry. Returns the number of
-// entries written. The parts are left in place.
+// named merge operator (see MergeOperatorNames), earlier parts first. The
+// operator has no default: it must be the one the parts were written for,
+// and only the caller knows which that is. Every output entry is a Merge
+// entry. Returns the number of entries written. The parts are left in place.
 uint64_t MergeSstFiles(const std::vector<std::string>& parts, const std::string& out,
-                       const std::string& compression = "zstd", int compression_level = 3,
-                       const std::string& merge_operator = "packed24");
+                       const std::string& merge_operator,
+                       const std::string& compression = "zstd", int compression_level = 3);
 
 } // namespace rshim
