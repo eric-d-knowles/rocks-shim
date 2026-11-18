@@ -9,7 +9,7 @@
 - **Zero system dependencies** - RocksDB and all compression libraries bundled in wheel
 - **Optimized for performance** - C++ implementation with minimal Python overhead
 - **Batch operations** - `PutBatch` and `MergeBatch` for reduced Python→C++ call overhead
-- **Custom merge operators** - Built-in `packed24` merge operator for efficient streaming data
+- **Merge operators by name** - `packed24` for summed runs of fixed-width records, and RocksDB's own `uint64add`, `stringappend`, `max` and `put`
 - **Configurable profiles** - Pre-tuned `write` (bulk ingest) and `read` (serving) settings
 - **SST file writing** - Direct creation of RocksDB SST files for bulk ingestion
 - **Portable wheels** - Works across different Linux distributions without recompilation
@@ -21,7 +21,7 @@ Wheels for Linux x86_64 (Python 3.11-3.13) are attached to each
 the one for your Python version, e.g.
 
 ```bash
-pip install https://github.com/eric-d-knowles/rocks-shim/releases/download/v0.9.0/rocks_shim-0.9.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+pip install https://github.com/eric-d-knowles/rocks-shim/releases/download/v0.10.0/rocks_shim-0.10.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 ```
 
 Or build from source (RocksDB, Snappy, LZ4 and ZSTD are downloaded and built
@@ -44,7 +44,7 @@ pip install .
 
 ### Releasing
 
-Publish a GitHub release with a version tag (e.g. `v0.9.0`, matching
+Publish a GitHub release with a version tag (e.g. `v0.10.0`, matching
 `pyproject.toml`). The `wheels` workflow builds the manylinux wheels with
 [cibuildwheel](https://cibuildwheel.pypa.io) inside the official manylinux
 container, runs `tests/` against each wheel, and attaches them to the
@@ -155,9 +155,11 @@ file open at once. A worker that spills many small sorted files should
 merge them into one before handing it over:
 
 ```python
-# Sorted parts, possibly sharing keys: one sorted file, shared keys summed
-# with the packed24 operator (merge_operator="none" to forbid shared keys).
-n = rs.merge_sst_files(["part0.sst", "part1.sst", ...], "unit.sst", compression="zstd")
+# Sorted parts, possibly sharing keys: one sorted file, the entries of a
+# shared key combined by the operator the parts were written for. The
+# operator must be named; there is no default.
+n = rs.merge_sst_files(["part0.sst", "part1.sst", ...], "unit.sst",
+                       merge_operator="packed24", compression="zstd")
 ```
 
 The parts are left in place for the caller to delete. Files written by
@@ -183,8 +185,10 @@ database's life:
   pinned, 64 MiB block cache; open the iterator with `fill_cache=False` and
   a `readahead_size`. About 200 MB per process whatever the database's size.
 
-Both accept a `:packed24` suffix (`write:packed24`) that installs the
-`packed24` merge operator described below.
+A merge operator is named separately, with `merge_operator=` (see
+[Merge operators](#merge-operators)); `write:packed24` is shorthand for
+`profile="write", merge_operator="packed24"`, and any operator's name may
+follow the colon.
 
 ```python
 # Select profile when opening database
@@ -233,25 +237,51 @@ for lo, hi, size, level in db.live_files():
     ...
 ```
 
-### Custom Merge Operator: packed24
+### Merge operators
 
-The bundled `packed24` merge operator efficiently merges sorted streams of 24-byte records (8-byte key + 8-byte count + 8-byte volume). This is optimized for time-series data with frequency counts.
+A merge operator says how RocksDB combines the operands written to one key
+with `merge`. Name one when opening a database:
 
 ```python
-# Using packed24 requires opening database with "write:packed24" profile
-db = rs.DB.Open(rs.OpenArgs(
-    path="/path/to/db",
-    create_if_missing=True,
-    profile="write:packed24"
-))
+db = rs.open("/path/to/db", mode="rw", create_if_missing=True,
+             profile="write", merge_operator="uint64add")
+rs.merge_operators()   # ['packed24', 'uint64add', 'stringappend', 'max', 'put']
+```
 
-# Each value is 24 bytes: key (8) + count (8) + volume (8)
-# Values must be sorted by the first 8 bytes
+| Name | Operands | Result |
+|---|---|---|
+| `packed24` | sorted runs of 24-byte records (see below) | the runs merged, records with the same key summed |
+| `uint64add` | 8-byte little-endian unsigned integers | their sum |
+| `stringappend` | byte strings | joined with `,` in the order written |
+| `max` | byte strings | the largest, compared as bytes |
+| `put` | byte strings | the latest |
+
+`packed24` is this library's own; the others are the ones RocksDB ships, with
+RocksDB's behaviour. The name may also be given as a suffix of the profile
+(`profile="write:packed24"`). A name that is not in the list is an error, and
+so is naming two different operators. A database must be opened with the
+operator it was written with: the operands are stored as written and combined
+when they are read or compacted. `merge_sst_files` takes the same names.
+
+#### packed24
+
+A value is a run of 24-byte records, each three little-endian unsigned 64-bit
+integers: a key, then two numbers. Records are in ascending order of their
+key. Merging two values merges the two runs and adds the numbers of records
+with the same key: counts per year, per bucket, per anything that sorts.
+
+```python
 import struct
 
-record = struct.pack("<QQQ", year, count, volume)
-db.Merge("ngram_key", record)
+db = rs.open("/path/to/db", mode="rw", create_if_missing=True, profile="write:packed24")
+db.merge(b"ngram", struct.pack("<QQQ", 1990, 5, 2))                    # year, count, volumes
+db.merge(b"ngram", struct.pack("<QQQQQQ", 1990, 1, 1, 2000, 7, 3))
+struct.unpack("<6Q", db.get(b"ngram"))                                  # (1990, 6, 3, 2000, 7, 3)
 ```
+
+A value whose length is not a multiple of 24 bytes is refused: the merge
+fails, and reading the key raises. That the keys within a value ascend is
+not checked (it would cost a pass over every value); a writer must ensure it.
 
 ## Performance Tips
 
@@ -291,7 +321,7 @@ If you use rocks-shim in your research, please cite it:
   title = {rocks-shim: Python bindings for RocksDB with optimized performance},
   year = {2024},
   url = {https://github.com/eric-d-knowles/rocks-shim},
-  version = {0.9.0}
+  version = {0.10.0}
 }
 ```
 

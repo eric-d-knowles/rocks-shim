@@ -3,8 +3,10 @@
 #include <rocks_shim/packed24_merge.hpp>
 
 #include <rocksdb/cache.h>
+#include <rocksdb/convenience.h>
 #include <rocksdb/db.h>
 #include <rocksdb/env.h>
+#include <rocksdb/merge_operator.h>
 #include <rocksdb/metadata.h>
 #include <rocksdb/filter_policy.h>
 #include <rocksdb/options.h>
@@ -32,6 +34,52 @@ static inline std::string merge_suffix(const std::string& prof) {
 static inline std::string base_profile(const std::string& prof) {
   auto pos = prof.find(':');
   return pos == std::string::npos ? prof : prof.substr(0, pos);
+}
+
+// ---------------- Merge operators ----------------
+// One table from name to operator, used wherever an operator is named: the
+// open path (OpenArgs::merge_operator, or the profile's suffix) and
+// MergeSstFiles. "packed24" is this library's; the others are RocksDB's own,
+// made through its registry by the id given here.
+struct OperatorEntry {
+  const char* name;
+  const char* rocksdb_id;      // nullptr: built here
+};
+constexpr OperatorEntry kOperators[] = {
+  {"packed24", nullptr},
+  {"uint64add", "uint64add"},        // 8-byte little-endian counters, added
+  {"stringappend", "stringappend"},  // operands joined with ","
+  {"max", "max"},                    // the largest operand, compared as bytes
+  {"put", "put"},                    // the latest operand wins
+};
+
+std::string operator_names_text() {
+  std::string out;
+  for (const auto& e : kOperators) {
+    if (!out.empty()) out += ", ";
+    out += e.name;
+  }
+  return out;
+}
+
+// The operator called `name`; nullptr for "" and "none". Throws
+// std::invalid_argument for a name that is not in the table.
+std::shared_ptr<rocksdb::MergeOperator> make_merge_operator(const std::string& name) {
+  if (name.empty() || name == "none") return nullptr;
+  for (const auto& e : kOperators) {
+    if (name != e.name) continue;
+    if (e.rocksdb_id == nullptr) return std::make_shared<rshim::Packed24Merge>();
+    std::shared_ptr<rocksdb::MergeOperator> op;
+    rocksdb::ConfigOptions config;
+    auto st = rocksdb::MergeOperator::CreateFromString(config, e.rocksdb_id, &op);
+    if (!st.ok() || !op) {
+      throw std::runtime_error("merge operator '" + name + "' is not available in this build of RocksDB: " +
+                               st.ToString());
+    }
+    return op;
+  }
+  throw std::invalid_argument("Unknown merge operator: '" + name + "'. Valid: " + operator_names_text() +
+                              ", none");
 }
 
 // ---------------- Iterator ----------------
@@ -118,10 +166,18 @@ inline void apply_profile(const OpenArgs& a, rocksdb::Options& o) {
     throw std::invalid_argument("Unknown profile: '" + a.profile + "'. Valid profiles: read, write, scan");
   }
 
-  // Merge operator by profile suffix
-  if (msuf == "packed24") {
-    o.merge_operator.reset(new rshim::Packed24Merge());
+  // Merge operator: named on its own, or as the profile's suffix. A name
+  // that is not known is an error (it used to be ignored as a suffix, and
+  // the database opened with no operator at all).
+  std::string op_name = a.merge_operator;
+  if (!msuf.empty()) {
+    if (!op_name.empty() && op_name != msuf) {
+      throw std::invalid_argument("The profile '" + a.profile + "' and merge_operator='" + op_name +
+                                  "' name different merge operators");
+    }
+    op_name = msuf;
   }
+  if (auto op = make_merge_operator(op_name)) o.merge_operator = op;
 
   // Configuration by profile base
   if (base == "read") {
@@ -565,22 +621,25 @@ std::shared_ptr<DB> DB::Open(const OpenArgs& args) {
   return std::make_shared<DbImpl>(std::shared_ptr<rocksdb::DB>(raw), args);
 }
 
+std::vector<std::string> MergeOperatorNames() {
+  std::vector<std::string> names;
+  for (const auto& e : kOperators) names.emplace_back(e.name);
+  return names;
+}
+
 std::shared_ptr<SstFileWriter> SstFileWriter::Create(const std::string& compression, int compression_level) {
   return std::make_shared<SstFileWriterImpl>(compression, compression_level);
 }
 
 uint64_t MergeSstFiles(const std::vector<std::string>& parts, const std::string& out,
-                       const std::string& compression, int compression_level,
-                       const std::string& merge_operator) {
-  const bool packed24 = merge_operator == "packed24";
-  if (!packed24 && merge_operator != "none") {
-    throw std::invalid_argument("Unknown merge_operator: '" + merge_operator + "'. Valid: packed24, none");
-  }
+                       const std::string& merge_operator,
+                       const std::string& compression, int compression_level) {
+  const std::shared_ptr<rocksdb::MergeOperator> op = make_merge_operator(merge_operator);
   // Each part is read through RocksDB's own reader. With the operator set the
   // reader resolves a key's operands within one part to a single value, so
   // what the merge sees is one entry per key per part.
   rocksdb::Options ropts;
-  if (packed24) ropts.merge_operator.reset(new rshim::Packed24Merge());
+  if (op) ropts.merge_operator = op;
   std::vector<std::unique_ptr<rocksdb::SstFileReader>> readers;
   std::vector<std::unique_ptr<rocksdb::Iterator>> its;
   readers.reserve(parts.size()); its.reserve(parts.size());
@@ -597,8 +656,13 @@ uint64_t MergeSstFiles(const std::vector<std::string>& parts, const std::string&
     readers.push_back(std::move(r));
     its.push_back(std::move(it));
   }
-  // Min-heap of the parts positioned on their current key.
-  auto greater = [&its](size_t a, size_t b) { return its[a]->key().compare(its[b]->key()) > 0; };
+  // Min-heap of the parts positioned on their current key; among parts on the
+  // same key the earlier part comes first, so an operator for which order
+  // matters (stringappend, put) sees the parts in the order they were given.
+  auto greater = [&its](size_t a, size_t b) {
+    const int c = its[a]->key().compare(its[b]->key());
+    return c != 0 ? c > 0 : a > b;
+  };
   std::priority_queue<size_t, std::vector<size_t>, decltype(greater)> heap(greater);
   for (size_t i = 0; i < its.size(); ++i) if (its[i]->Valid()) heap.push(i);
 
@@ -617,10 +681,14 @@ uint64_t MergeSstFiles(const std::vector<std::string>& parts, const std::string&
     used.clear(); used.push_back(i);
     while (!heap.empty() && its[heap.top()]->key().compare(key) == 0) {
       size_t j = heap.top(); heap.pop();
-      if (!packed24) throw std::runtime_error("key present in more than one part with merge_operator 'none'");
-      const auto& v = its[j]->value();
-      detail::merge_packed24_unchecked(reinterpret_cast<const unsigned char*>(value.data()), value.size(),
-                                       reinterpret_cast<const unsigned char*>(v.data()), v.size(), &combined);
+      if (!op) throw std::runtime_error("key present in more than one part with merge_operator 'none'");
+      // Two operands become one operand: the operator's partial merge.
+      combined.clear();
+      if (!op->PartialMerge(key, value, its[j]->value(), &combined, nullptr)) {
+        throw std::runtime_error("the '" + merge_operator + "' merge operator could not combine the entries of a "
+                                 "key present in more than one part (a malformed value, or an operator that "
+                                 "cannot combine operands)");
+      }
       value.swap(combined);
       used.push_back(j);
     }
