@@ -330,6 +330,10 @@ If you use rocks-shim in your research, please cite it:
 
 Licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
+A built wheel links RocksDB (Apache License 2.0), Snappy, LZ4 and Zstandard
+(BSD licences) into its one module. Their licences are reproduced in
+[THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES), which is included in every wheel.
+
 ## Contributing
 
 Contributions welcome! Please open an issue or pull request on GitHub.
